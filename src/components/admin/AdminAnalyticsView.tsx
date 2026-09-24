@@ -443,16 +443,23 @@ export function AdminAnalyticsView() {
           {/* Retention Cohorts */}
           <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4">
             <div>
-              <h2 className="text-lg font-bold text-white">Kohort Retensi Pengguna (UU PDP Compliant)</h2>
-              <p className="text-xs text-slate-400">Sesuai standar definisi retensi pada dokumen `docs/analytics-data-dictionary.md`.</p>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className="text-lg font-bold text-white">Kohort Retensi Pengguna (UU PDP Compliant)</h2>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 uppercase tracking-wider">
+                  Real Cohort-Based
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">Berdasarkan kohor aktivitas nyata COMMANDEV yang terdaftar pada sistem.</p>
             </div>
-
+ 
             <div className="grid sm:grid-cols-3 gap-4">
               {summary?.retentionMetrics?.map((ret) => (
                 <div key={ret.period} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-400">{ret.period} Retention</span>
-                    <span className="text-2xl font-black text-white">{ret.retentionRatePercentage}%</span>
+                    <span className="text-xs font-bold text-indigo-400">{ret.period} Retention</span>
+                    <span className="text-2xl font-black text-white">
+                      {ret.retentionRatePercentage !== null && ret.retentionRatePercentage !== undefined ? `${ret.retentionRatePercentage}%` : 'Belum Cukup Umur'}
+                    </span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
                     {ret.definition}

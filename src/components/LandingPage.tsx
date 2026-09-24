@@ -26,9 +26,10 @@ import defaultHeroImage from '../assets/images/hero_background_1790058825568.jpg
 interface CodingAcademyLandingProps {
   onStartLearning: () => void;
   onOpenAuth?: () => void;
+  onViewAboutUs?: () => void;
 }
 
-export const CodingAcademyLanding: React.FC<CodingAcademyLandingProps> = ({ onStartLearning, onOpenAuth }) => {
+export const CodingAcademyLanding: React.FC<CodingAcademyLandingProps> = ({ onStartLearning, onOpenAuth, onViewAboutUs }) => {
   const { signInWithGoogle } = useAuth();
   const { settings } = useSettings();
   const [showVideoModal, setShowVideoModal] = useState(false);
@@ -74,6 +75,7 @@ export const CodingAcademyLanding: React.FC<CodingAcademyLandingProps> = ({ onSt
       projectsNav: "Projects",
       securityNav: "Security",
       faqNav: "FAQ",
+      aboutUsNav: "Tentang Kami",
       eyebrow: "COMMANDEV — INTERACTIVE DEVELOPER LEARNING PLATFORM",
       heroTitle1: "Belajar Coding.",
       heroTitleHighlight: "Bangun Sesuatu yang Nyata.",
@@ -170,6 +172,7 @@ export const CodingAcademyLanding: React.FC<CodingAcademyLandingProps> = ({ onSt
       projectsNav: "Projects",
       securityNav: "Security",
       faqNav: "FAQ",
+      aboutUsNav: "About Us",
       eyebrow: "COMMANDEV — INTERACTIVE DEVELOPER LEARNING PLATFORM",
       heroTitle1: "Learn to Code.",
       heroTitleHighlight: "Build Something Real.",
@@ -276,19 +279,51 @@ export const CodingAcademyLanding: React.FC<CodingAcademyLandingProps> = ({ onSt
 
           {/* Desktop Navigation Links */}
           <div className="hidden md:flex items-center gap-6 lg:gap-8 text-sm font-semibold text-slate-300">
-            <a href="#" className="relative text-white hover:text-blue-400 transition-colors pb-1">
+            <a href="#" className="relative text-white hover:text-blue-400 transition-colors pb-1 group">
               {t.homeNav}
               <span className="absolute bottom-[-6px] left-0 right-0 h-[3px] bg-[#0088ff] rounded-full"></span>
             </a>
-            <a href="#courses" className="hover:text-blue-400 transition-colors">{t.coursesNav}</a>
-            <a href="#roadmap" className="hover:text-blue-400 transition-colors">{t.learningPathNav}</a>
-            <a href="#projects" className="hover:text-blue-400 transition-colors">{t.projectsNav}</a>
-            <a href="#security" className="hover:text-blue-400 transition-colors">{t.securityNav}</a>
-            <a href="#faq" className="hover:text-blue-400 transition-colors">{t.faqNav}</a>
+            <a href="#courses" className="relative hover:text-blue-400 transition-all duration-300 pb-1 group">
+              {t.coursesNav}
+              <span className="absolute bottom-[-6px] left-0 right-0 h-[3px] bg-[#0088ff] rounded-full scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-center"></span>
+            </a>
+            <a href="#roadmap" className="relative hover:text-blue-400 transition-all duration-300 pb-1 group">
+              {t.learningPathNav}
+              <span className="absolute bottom-[-6px] left-0 right-0 h-[3px] bg-[#0088ff] rounded-full scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-center"></span>
+            </a>
+            <a href="#projects" className="relative hover:text-blue-400 transition-all duration-300 pb-1 group">
+              {t.projectsNav}
+              <span className="absolute bottom-[-6px] left-0 right-0 h-[3px] bg-[#0088ff] rounded-full scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-center"></span>
+            </a>
+            <a href="#security" className="relative hover:text-blue-400 transition-all duration-300 pb-1 group">
+              {t.securityNav}
+              <span className="absolute bottom-[-6px] left-0 right-0 h-[3px] bg-[#0088ff] rounded-full scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-center"></span>
+            </a>
+            <a href="#faq" className="relative hover:text-blue-400 transition-all duration-300 pb-1 group">
+              {t.faqNav}
+              <span className="absolute bottom-[-6px] left-0 right-0 h-[3px] bg-[#0088ff] rounded-full scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-center"></span>
+            </a>
+            <button 
+              onClick={onViewAboutUs}
+              className="relative hover:text-blue-400 transition-all duration-300 pb-1 group cursor-pointer text-slate-300 font-semibold"
+            >
+              {t.aboutUsNav}
+              <span className="absolute bottom-[-6px] left-0 right-0 h-[3px] bg-[#0088ff] rounded-full scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-center"></span>
+            </button>
           </div>
 
           <div className="flex items-center gap-2.5 sm:gap-4">
-            {/* Language Selector */}
+            {/* Sign In Button (Icon Only) */}
+            <button 
+              onClick={handleStart} 
+              aria-label={t.signIn}
+              title={t.signIn}
+              className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-slate-900/80 border border-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-800/80 hover:border-slate-700/80 transition-all shadow-md group cursor-pointer"
+            >
+              <User className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            </button>
+
+            {/* Language Selector (Far Right) */}
             <div className="flex items-center bg-slate-900/90 border border-slate-800 rounded-xl p-1 shadow-inner">
               <button
                 onClick={() => setLang('id')}
@@ -305,20 +340,6 @@ export const CodingAcademyLanding: React.FC<CodingAcademyLandingProps> = ({ onSt
                 <span>🇬🇧</span> EN
               </button>
             </div>
-
-            <button 
-              onClick={handleStart} 
-              className="hidden sm:inline-flex text-xs sm:text-sm font-bold text-slate-300 hover:text-white px-3 sm:px-4 py-2.5 transition-colors cursor-pointer"
-            >
-              {t.signIn}
-            </button>
-            <button 
-              onClick={onStartLearning}
-              className="hidden sm:inline-flex px-5 sm:px-6 py-2.5 sm:py-3 bg-[#0088ff] hover:bg-[#0077ee] text-white text-xs sm:text-sm font-bold rounded-full shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 hover:-translate-y-0.5 transition-all cursor-pointer items-center gap-2"
-            >
-              <span>{t.startLearning}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
 
             {/* Mobile Hamburger Toggle Button */}
             <button
@@ -382,21 +403,11 @@ export const CodingAcademyLanding: React.FC<CodingAcademyLandingProps> = ({ onSt
               >
                 {t.faqNav}
               </a>
-            </div>
-
-            <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-col gap-2.5">
-              <button
-                onClick={() => { setMobileMenuOpen(false); handleStart(); }}
-                className="w-full py-2.5 px-4 rounded-xl text-center font-bold text-sm text-slate-200 bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors cursor-pointer"
+              <button 
+                onClick={() => { setMobileMenuOpen(false); onViewAboutUs?.(); }}
+                className="px-3 py-2.5 rounded-lg text-left hover:bg-slate-800/60 hover:text-blue-400 transition-colors cursor-pointer font-semibold text-sm text-slate-300"
               >
-                {t.signIn}
-              </button>
-              <button
-                onClick={() => { setMobileMenuOpen(false); onStartLearning(); }}
-                className="w-full py-2.5 px-4 rounded-xl text-center font-bold text-sm text-white bg-[#0088ff] hover:bg-[#0077ee] shadow-lg shadow-blue-500/20 transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                <span>{t.startLearning}</span>
-                <ArrowRight className="w-4 h-4" />
+                {t.aboutUsNav}
               </button>
             </div>
           </div>

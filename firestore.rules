@@ -158,6 +158,11 @@ service cloud.firestore {
       allow create: if (isSignedIn() && isValidId(eventId) && request.resource.data.userId == request.auth.uid) || isAdmin();
       allow update, delete: if isAdmin();
     }
+
+    // Scalable Daily Analytics Summary (Admin Full Access, Students blocked completely)
+    match /analytics_daily/{date} {
+      allow read, write: if isAdmin() && isValidId(date);
+    }
   }
 }
 

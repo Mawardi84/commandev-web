@@ -47,16 +47,6 @@ const authenticateFirebaseUser = async (req: express.Request, res: express.Respo
   }
   const token = authHeader.split('Bearer ')[1];
 
-  // Support local site owner admin token
-  if (token === 'site-owner-admin-token' || token === 'demo-admin-token') {
-    req.user = {
-      uid: 'site-owner-admin-01',
-      email: 'admin@commandev.com',
-      admin: true
-    } as any;
-    return next();
-  }
-
   try {
     const decodedToken = await adminAuth.verifyIdToken(token);
     req.user = decodedToken;
@@ -3150,6 +3140,256 @@ async function startServer() {
   // In-memory summary cache with 10s TTL for fast dashboard responsiveness
   let cachedSummary: { data: AnalyticsSummaryDTO; timestamp: number; key: string } | null = null;
 
+  // Helper: Date difference in days (UTC calendar aligned)
+  function getDaysDiff(dateStr1: string, dateStr2: string): number {
+    const d1 = new Date(dateStr1);
+    const d2 = new Date(dateStr2);
+    const utc1 = Date.UTC(d1.getUTCFullYear(), d1.getUTCMonth(), d1.getUTCDate());
+    const utc2 = Date.UTC(d2.getUTCFullYear(), d2.getUTCMonth(), d2.getUTCDate());
+    return Math.floor((utc2 - utc1) / 86400000);
+  }
+
+  // Helper: Get list of YYYY-MM-DD date strings for any given range
+  function getDateStringsForRange(range: string, startDateQuery: string | null, endDateQuery: string | null, now: Date): string[] {
+    const dates: string[] = [];
+    let startDate = new Date(now.getTime() - 30 * 86400000);
+    let endDate = new Date(now.getTime());
+
+    if (range === 'today') {
+      startDate = new Date(now.getTime());
+    } else if (range === '7d') {
+      startDate = new Date(now.getTime() - 7 * 86400000);
+    } else if (range === '90d') {
+      startDate = new Date(now.getTime() - 90 * 86400000);
+    } else if (range === 'custom' && startDateQuery) {
+      startDate = new Date(startDateQuery);
+      if (endDateQuery) {
+        endDate = new Date(endDateQuery);
+      }
+    }
+
+    const current = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()));
+    const endUTC = Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate());
+
+    let count = 0;
+    while (current.getTime() <= endUTC && count < 120) {
+      dates.push(current.toISOString().split('T')[0]);
+      current.setUTCDate(current.getUTCDate() + 1);
+      count++;
+    }
+    return dates;
+  }
+
+  // Core Aggregator: Compiles and saves raw events to daily document (Idempotent upsert)
+  async function aggregateDailyEvents(adminDb: any, targetDateStr: string) {
+    const startIso = `${targetDateStr}T00:00:00.000Z`;
+    const endIso = `${targetDateStr}T23:59:59.999Z`;
+
+    const snap = await adminDb.collection('analytics_events')
+      .where('timestamp', '>=', startIso)
+      .where('timestamp', '<=', endIso)
+      .get();
+
+    const userIdsSet = new Set<string>();
+    const sessionIdsSet = new Set<string>();
+    let lessonStarts = 0;
+    let lessonCompletions = 0;
+    let quizAttempts = 0;
+    let quizPasses = 0;
+    let projectSubmissions = 0;
+    let projectPasses = 0;
+    let projectScoreTotal = 0;
+    let projectScoreCount = 0;
+    let simulatorUsage = 0;
+    let loginEvents = 0;
+    let logoutEvents = 0;
+    let challengesCompleted = 0;
+
+    const eventsByName: Record<string, number> = {};
+    const courseStats: Record<string, { learners: string[]; started: number; completed: number; quizPassed: number; quizAttempts: number; projPassed: number; projAttempts: number }> = {};
+    const simulatorStats: Record<string, { starts: number; completions: number; learners: string[] }> = {};
+
+    snap.forEach((doc: any) => {
+      const data = doc.data();
+      const eventName = data.eventName;
+      const uId = data.userId;
+      const sId = data.sessionId;
+
+      if (uId) userIdsSet.add(uId);
+      if (sId) sessionIdsSet.add(sId);
+
+      eventsByName[eventName] = (eventsByName[eventName] || 0) + 1;
+
+      if (eventName === 'lesson_started') lessonStarts++;
+      if (eventName === 'lesson_completed') lessonCompletions++;
+      if (eventName === 'quiz_attempted') {
+        quizAttempts++;
+        if (data.properties?.passed === true) quizPasses++;
+      }
+      if (eventName === 'project_submitted') projectSubmissions++;
+      if (eventName === 'project_evaluated') {
+        if (data.properties?.passed === true) projectPasses++;
+        if (typeof data.properties?.score === 'number') {
+          projectScoreTotal += data.properties.score;
+          projectScoreCount++;
+        }
+      }
+      if (eventName === 'simulator_started' || eventName === 'simulator_completed') {
+        simulatorUsage++;
+      }
+      if (eventName === 'login_completed') loginEvents++;
+      if (eventName === 'logout_completed') logoutEvents++;
+      if (eventName === 'challenge_completed') challengesCompleted++;
+
+      if (data.courseId) {
+        if (!courseStats[data.courseId]) {
+          courseStats[data.courseId] = { learners: [], started: 0, completed: 0, quizPassed: 0, quizAttempts: 0, projPassed: 0, projAttempts: 0 };
+        }
+        const c = courseStats[data.courseId];
+        if (uId && !c.learners.includes(uId)) c.learners.push(uId);
+        if (eventName === 'course_started') c.started++;
+        if (eventName === 'course_completed') c.completed++;
+        if (eventName === 'quiz_attempted') {
+          c.quizAttempts++;
+          if (data.properties?.passed === true) c.quizPassed++;
+        }
+        if (eventName === 'project_evaluated') {
+          c.projAttempts++;
+          if (data.properties?.passed === true) c.projPassed++;
+        }
+      }
+
+      if (data.simulatorId) {
+        if (!simulatorStats[data.simulatorId]) {
+          simulatorStats[data.simulatorId] = { starts: 0, completions: 0, learners: [] };
+        }
+        const s = simulatorStats[data.simulatorId];
+        if (uId && !s.learners.includes(uId)) s.learners.push(uId);
+        if (eventName === 'simulator_started') s.starts++;
+        if (eventName === 'simulator_completed') s.completions++;
+      }
+    });
+
+    const docData = {
+      date: targetDateStr,
+      uniqueUsers: userIdsSet.size,
+      sessions: sessionIdsSet.size,
+      userIds: Array.from(userIdsSet),
+      sessionIds: Array.from(sessionIdsSet),
+      lessonStarts,
+      lessonCompletions,
+      quizAttempts,
+      quizPasses,
+      projectSubmissions,
+      projectPasses,
+      projectScoreTotal,
+      projectScoreCount,
+      simulatorUsage,
+      loginEvents,
+      logoutEvents,
+      challengesCompleted,
+      eventsByName,
+      courseStats,
+      simulatorStats,
+      updatedAt: new Date().toISOString()
+    };
+
+    await adminDb.collection('analytics_daily').doc(targetDateStr).set(docData);
+    return docData;
+  }
+
+  // Core Cohort Retention: Calculates dynamic D1, D7, and D30 cohort retention
+  function calculateCohortRetention(dailyDocs: any[], todayStr: string) {
+    const userFirstSeen: Record<string, string> = {};
+    const activeUsersPerDay: Record<string, Set<string>> = {};
+
+    dailyDocs.forEach(doc => {
+      const dateStr = doc.date;
+      const userIds = Array.isArray(doc.userIds) ? doc.userIds : [];
+      activeUsersPerDay[dateStr] = new Set(userIds);
+
+      userIds.forEach((uId: string) => {
+        if (!userFirstSeen[uId]) {
+          userFirstSeen[uId] = dateStr;
+        } else {
+          if (dateStr < userFirstSeen[uId]) {
+            userFirstSeen[uId] = dateStr;
+          }
+        }
+      });
+    });
+
+    const cohorts: Record<string, string[]> = {};
+    Object.entries(userFirstSeen).forEach(([uId, cohortDate]) => {
+      if (!cohorts[cohortDate]) {
+        cohorts[cohortDate] = [];
+      }
+      cohorts[cohortDate].push(uId);
+    });
+
+    let d1TotalCohortSize = 0;
+    let d1TotalReturned = 0;
+
+    let d7TotalCohortSize = 0;
+    let d7TotalReturned = 0;
+
+    let d30TotalCohortSize = 0;
+    let d30TotalReturned = 0;
+
+    const addDays = (dateStr: string, days: number): string => {
+      const d = new Date(`${dateStr}T00:00:00.000Z`);
+      d.setUTCDate(d.getUTCDate() + days);
+      return d.toISOString().split('T')[0];
+    };
+
+    Object.entries(cohorts).forEach(([cohortDate, members]) => {
+      const size = members.length;
+      if (size === 0) return;
+
+      const d1Eligible = getDaysDiff(cohortDate, todayStr) >= 1;
+      const d7Eligible = getDaysDiff(cohortDate, todayStr) >= 7;
+      const d30Eligible = getDaysDiff(cohortDate, todayStr) >= 30;
+
+      if (d1Eligible) {
+        const targetDate = addDays(cohortDate, 1);
+        const activeSet = activeUsersPerDay[targetDate] || new Set();
+        const returned = members.filter(uId => activeSet.has(uId)).length;
+        d1TotalCohortSize += size;
+        d1TotalReturned += returned;
+      }
+
+      if (d7Eligible) {
+        const targetDate = addDays(cohortDate, 7);
+        const activeSet = activeUsersPerDay[targetDate] || new Set();
+        const returned = members.filter(uId => activeSet.has(uId)).length;
+        d7TotalCohortSize += size;
+        d7TotalReturned += returned;
+      }
+
+      if (d30Eligible) {
+        const targetDate = addDays(cohortDate, 30);
+        const activeSet = activeUsersPerDay[targetDate] || new Set();
+        const returned = members.filter(uId => activeSet.has(uId)).length;
+        d30TotalCohortSize += size;
+        d30TotalReturned += returned;
+      }
+    });
+
+    const d1 = d1TotalCohortSize > 0 ? Math.round((d1TotalReturned / d1TotalCohortSize) * 100) : null;
+    const d7 = d7TotalCohortSize > 0 ? Math.round((d7TotalReturned / d7TotalCohortSize) * 100) : null;
+    const d30 = d30TotalCohortSize > 0 ? Math.round((d30TotalReturned / d30TotalCohortSize) * 100) : null;
+
+    return {
+      d1,
+      d7,
+      d30,
+      d1Eligible: d1TotalCohortSize > 0,
+      d7Eligible: d7TotalCohortSize > 0,
+      d30Eligible: d30TotalCohortSize > 0,
+      cohortSize: d1TotalCohortSize || 1
+    };
+  }
+
   // Admin API: Aggregated Analytics Summary with Date Filtering & Deep KPI breakdowns
   app.get('/api/admin/analytics/summary', authenticateFirebaseUser, requireAdmin, async (req, res) => {
     try {
@@ -3163,24 +3403,73 @@ async function startServer() {
         return res.json(cachedSummary.data);
       }
 
-      // Compute cutoff date using consistent UTC ISO timestamps
-      let cutoffDate = new Date(now.getTime() - 30 * 86400000);
-      if (range === 'today') {
-        cutoffDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
-      } else if (range === '7d') {
-        cutoffDate = new Date(now.getTime() - 7 * 86400000);
-      } else if (range === '90d') {
-        cutoffDate = new Date(now.getTime() - 90 * 86400000);
-      } else if (range === 'custom' && startDateQuery) {
-        cutoffDate = new Date(startDateQuery);
+      // Compute dates that fall within target range
+      const datesToFetch = getDateStringsForRange(range, startDateQuery, endDateQuery, now);
+      const todayStr = now.toISOString().split('T')[0];
+
+      // Self-backfilling & live updates: always fresh aggregate the last 3 days non-blockingly
+      const datesToForceRefresh: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const d = new Date(now.getTime() - i * 86400000);
+        datesToForceRefresh.push(d.toISOString().split('T')[0]);
       }
-      const cutoffIso = cutoffDate.toISOString();
 
-      const eventsSnap = await adminDb.collection('analytics_events')
-        .orderBy('timestamp', 'desc')
-        .limit(2000)
-        .get();
+      for (const dStr of datesToForceRefresh) {
+        try {
+          await aggregateDailyEvents(adminDb, dStr);
+        } catch (aggErr) {
+          console.error(`Failed dynamic daily aggregation for ${dStr}:`, aggErr);
+        }
+      }
 
+      // Load all daily summaries in parallel (highly scalable, no raw event query bounds)
+      const fetchPromises = datesToFetch.map(async (dStr) => {
+        const docRef = adminDb.collection('analytics_daily').doc(dStr);
+        const snap = await docRef.get();
+        if (snap.exists) {
+          return snap.data();
+        } else {
+          // On-the-fly backfill for older missing daily summaries
+          try {
+            return await aggregateDailyEvents(adminDb, dStr);
+          } catch (err) {
+            console.error(`Failed dynamic older backfill for ${dStr}:`, err);
+            return null;
+          }
+        }
+      });
+
+      const fetchedDocs = await Promise.all(fetchPromises);
+      const allDailyDocs = fetchedDocs.filter(Boolean) as any[];
+
+      // Fetch broad history for cohort retention calculations to guarantee user cohort matches their actual first seen activity
+      const retentionHistoryDays = 90;
+      const retentionDates = [];
+      for (let i = retentionHistoryDays - 1; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 86400000);
+        retentionDates.push(d.toISOString().split('T')[0]);
+      }
+
+      const retentionPromises = retentionDates.map(async (dStr) => {
+        // Skip fetch if already fetched in primary datesToFetch
+        const existing = (allDailyDocs as any[]).find(x => x && x.date === dStr);
+        if (existing) return existing;
+
+        const docRef = adminDb.collection('analytics_daily').doc(dStr);
+        const snap = await docRef.get();
+        if (snap.exists) return snap.data();
+
+        // Dynamically aggregate oldest history on-the-fly (lazy backfill)
+        try {
+          return await aggregateDailyEvents(adminDb, dStr);
+        } catch {
+          return null;
+        }
+      });
+      const retentionDocs = (await Promise.all(retentionPromises)).filter(Boolean) as any[];
+
+      // In-Memory Aggregation across date-range documents
+      let totalEvents = 0;
       const eventsByName: Record<string, number> = {};
       const uniqueUsersSet = new Set<string>();
       const activeSessionsSet = new Set<string>();
@@ -3188,9 +3477,9 @@ async function startServer() {
       const wauUsersSet = new Set<string>();
       const mauUsersSet = new Set<string>();
 
-      const oneDayAgoIso = new Date(now.getTime() - 86400000).toISOString();
-      const sevenDaysAgoIso = new Date(now.getTime() - 7 * 86400000).toISOString();
-      const thirtyDaysAgoIso = new Date(now.getTime() - 30 * 86400000).toISOString();
+      const oneDayAgoStr = new Date(now.getTime() - 86400000).toISOString().split('T')[0];
+      const sevenDaysAgoStr = new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0];
+      const thirtyDaysAgoStr = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
 
       let lessonCompletions = 0;
       let quizAttempts = 0;
@@ -3202,117 +3491,74 @@ async function startServer() {
       let simulatorUsageCount = 0;
       let challengesCompleted = 0;
 
-      // Grouping per course & simulator
       const courseStatsMap = new Map<string, { learners: Set<string>; started: number; completed: number; quizPassed: number; quizAttempts: number; projPassed: number; projAttempts: number }>();
       const simulatorStatsMap = new Map<string, { starts: number; completions: number; learners: Set<string> }>();
 
-      // Activity trend per day
-      const dailyBuckets = new Map<string, { activeUsers: Set<string>; sessions: Set<string>; lessonCompletions: number; quizAttempts: number; projectSubmissions: number }>();
-
-      // Initialize trend buckets for the selected range (last 7 or 14 points)
-      const numTrendDays = range === 'today' ? 1 : range === '7d' ? 7 : range === '90d' ? 30 : 14;
-      for (let i = numTrendDays - 1; i >= 0; i--) {
-        const d = new Date(now.getTime() - i * 86400000);
-        const dateKey = d.toISOString().split('T')[0];
-        dailyBuckets.set(dateKey, {
-          activeUsers: new Set(),
-          sessions: new Set(),
-          lessonCompletions: 0,
-          quizAttempts: 0,
-          projectSubmissions: 0
+      allDailyDocs.forEach(doc => {
+        // Count events and merge metrics
+        const evs = doc.eventsByName || {};
+        Object.entries(evs).forEach(([name, count]: [string, any]) => {
+          eventsByName[name] = (eventsByName[name] || 0) + count;
+          totalEvents += count;
         });
-      }
 
-      eventsSnap.forEach(doc => {
-        const data = doc.data() as AnalyticsEvent;
-        const ts = data.timestamp || new Date().toISOString();
-        const dateKey = ts.split('T')[0];
+        const uIds = Array.isArray(doc.userIds) ? doc.userIds : [];
+        const sIds = Array.isArray(doc.sessionIds) ? doc.sessionIds : [];
 
-        // DAU, WAU, MAU calculations
-        if (data.userId) {
-          if (ts >= oneDayAgoIso) dauUsersSet.add(data.userId);
-          if (ts >= sevenDaysAgoIso) wauUsersSet.add(data.userId);
-          if (ts >= thirtyDaysAgoIso) mauUsersSet.add(data.userId);
-        }
+        uIds.forEach((id: string) => {
+          uniqueUsersSet.add(id);
+          if (doc.date >= oneDayAgoStr) dauUsersSet.add(id);
+          if (doc.date >= sevenDaysAgoStr) wauUsersSet.add(id);
+          if (doc.date >= thirtyDaysAgoStr) mauUsersSet.add(id);
+        });
 
-        // Apply range filter
-        if (ts < cutoffIso) return;
-        if (range === 'custom' && endDateQuery && ts > endDateQuery) return;
+        sIds.forEach((id: string) => activeSessionsSet.add(id));
 
-        eventsByName[data.eventName] = (eventsByName[data.eventName] || 0) + 1;
-        if (data.userId) uniqueUsersSet.add(data.userId);
-        if (data.sessionId) activeSessionsSet.add(data.sessionId);
+        lessonCompletions += doc.lessonCompletions || 0;
+        quizAttempts += doc.quizAttempts || 0;
+        quizPassed += doc.quizPasses || 0;
+        projectSubmissions += doc.projectSubmissions || 0;
+        projectPassed += doc.projectPasses || 0;
+        projectScoreTotal += doc.projectScoreTotal || 0;
+        projectScoreCount += doc.projectScoreCount || 0;
+        simulatorUsageCount += doc.simulatorUsage || 0;
+        challengesCompleted += doc.challengesCompleted || 0;
 
-        // Trend aggregation
-        if (dailyBuckets.has(dateKey)) {
-          const bucket = dailyBuckets.get(dateKey)!;
-          if (data.userId) bucket.activeUsers.add(data.userId);
-          if (data.sessionId) bucket.sessions.add(data.sessionId);
-          if (data.eventName === 'lesson_completed') bucket.lessonCompletions++;
-          if (data.eventName === 'quiz_attempted') bucket.quizAttempts++;
-          if (data.eventName === 'project_submitted') bucket.projectSubmissions++;
-        }
-
-        // Event-specific tracking
-        if (data.eventName === 'lesson_completed') lessonCompletions++;
-        if (data.eventName === 'quiz_attempted') {
-          quizAttempts++;
-          if (data.properties?.passed === true) quizPassed++;
-        }
-        if (data.eventName === 'project_submitted') projectSubmissions++;
-        if (data.eventName === 'project_evaluated') {
-          if (data.properties?.passed === true) projectPassed++;
-          if (typeof data.properties?.score === 'number') {
-            projectScoreTotal += data.properties.score;
-            projectScoreCount++;
+        // Course breakdowns
+        Object.entries(doc.courseStats || {}).forEach(([cId, stats]: [string, any]) => {
+          if (!courseStatsMap.has(cId)) {
+            courseStatsMap.set(cId, { learners: new Set(), started: 0, completed: 0, quizPassed: 0, quizAttempts: 0, projPassed: 0, projAttempts: 0 });
           }
-        }
-        if (data.eventName === 'simulator_started' || data.eventName === 'simulator_completed') {
-          simulatorUsageCount++;
-        }
-        if (data.eventName === 'challenge_completed') {
-          challengesCompleted++;
-        }
+          const m = courseStatsMap.get(cId)!;
+          stats.learners?.forEach((id: string) => m.learners.add(id));
+          m.started += stats.started || 0;
+          m.completed += stats.completed || 0;
+          m.quizPassed += stats.quizPassed || 0;
+          m.quizAttempts += stats.quizAttempts || 0;
+          m.projPassed += stats.projPassed || 0;
+          m.projAttempts += stats.projAttempts || 0;
+        });
 
-        // Course Breakdown
-        if (data.courseId) {
-          if (!courseStatsMap.has(data.courseId)) {
-            courseStatsMap.set(data.courseId, { learners: new Set(), started: 0, completed: 0, quizPassed: 0, quizAttempts: 0, projPassed: 0, projAttempts: 0 });
+        // Simulator breakdowns
+        Object.entries(doc.simulatorStats || {}).forEach(([simId, stats]: [string, any]) => {
+          if (!simulatorStatsMap.has(simId)) {
+            simulatorStatsMap.set(simId, { starts: 0, completions: 0, learners: new Set() });
           }
-          const cStats = courseStatsMap.get(data.courseId)!;
-          if (data.userId) cStats.learners.add(data.userId);
-          if (data.eventName === 'course_started') cStats.started++;
-          if (data.eventName === 'course_completed') cStats.completed++;
-          if (data.eventName === 'quiz_attempted') {
-            cStats.quizAttempts++;
-            if (data.properties?.passed === true) cStats.quizPassed++;
-          }
-          if (data.eventName === 'project_evaluated') {
-            cStats.projAttempts++;
-            if (data.properties?.passed === true) cStats.projPassed++;
-          }
-        }
-
-        // Simulator Breakdown
-        if (data.simulatorId) {
-          if (!simulatorStatsMap.has(data.simulatorId)) {
-            simulatorStatsMap.set(data.simulatorId, { starts: 0, completions: 0, learners: new Set() });
-          }
-          const sStats = simulatorStatsMap.get(data.simulatorId)!;
-          if (data.userId) sStats.learners.add(data.userId);
-          if (data.eventName === 'simulator_started') sStats.starts++;
-          if (data.eventName === 'simulator_completed') sStats.completions++;
-        }
+          const m = simulatorStatsMap.get(simId)!;
+          stats.learners?.forEach((id: string) => m.learners.add(id));
+          m.starts += stats.starts || 0;
+          m.completions += stats.completions || 0;
+        });
       });
 
-      // Transform activity trends
-      const activityTrends: ActivityTrendPoint[] = Array.from(dailyBuckets.entries()).map(([date, bucket]) => ({
-        date,
-        activeUsers: bucket.activeUsers.size,
-        sessions: bucket.sessions.size,
-        lessonCompletions: bucket.lessonCompletions,
-        quizAttempts: bucket.quizAttempts,
-        projectSubmissions: bucket.projectSubmissions
+      // Daily trends
+      const activityTrends = allDailyDocs.map(doc => ({
+        date: doc.date,
+        activeUsers: doc.uniqueUsers || 0,
+        sessions: doc.sessions || 0,
+        lessonCompletions: doc.lessonCompletions || 0,
+        quizAttempts: doc.quizAttempts || 0,
+        projectSubmissions: doc.projectSubmissions || 0
       }));
 
       // Conversion Funnel DTO
@@ -3339,7 +3585,7 @@ async function startServer() {
         ]
       };
 
-      // Course Analytics Table Data (mapped across all 24 courses)
+      // Course breakdowns table
       const courseAnalytics: CourseAnalyticsDTO[] = COURSES.map(course => {
         const stats = courseStatsMap.get(course.id) || { learners: new Set(), started: 0, completed: 0, quizPassed: 0, quizAttempts: 0, projPassed: 0, projAttempts: 0 };
         return {
@@ -3355,7 +3601,7 @@ async function startServer() {
         };
       });
 
-      // 10 Simulators of Course 24
+      // Simulator breakdowns
       const SIMULATOR_NAMES: Record<string, string> = {
         'explorer': 'Architecture Explorer',
         'tradeoff': 'Trade-off Decision Engine (PACELC)',
@@ -3381,7 +3627,6 @@ async function startServer() {
         };
       });
 
-      // Total Modules & Lessons across all 24 courses
       let totalModules = 0;
       let totalLessons = 0;
       COURSES.forEach(c => {
@@ -3394,10 +3639,10 @@ async function startServer() {
       });
 
       const contentMetrics: ContentLifecycleMetricsDTO = {
-        totalCourses: COURSES.length, // exactly 24
+        totalCourses: COURSES.length,
         totalModules,
         totalLessons,
-        totalProjects: ALL_CODERA_PROJECTS.length, // exactly 26
+        totalProjects: ALL_CODERA_PROJECTS.length,
         totalQuizzes: 180,
         totalSimulators: 10,
         statusBreakdown: {
@@ -3417,35 +3662,42 @@ async function startServer() {
         avgResponseTimeMs: 18
       };
 
+      // Calculate True Cohort Retention
+      const cohortDateLabel = thirtyDaysAgoStr;
+      const retention = calculateCohortRetention(retentionDocs, todayStr);
+
       const retentionMetrics: RetentionMetricDTO[] = [
         {
           period: 'Day 1',
-          cohortDate: thirtyDaysAgoIso.split('T')[0],
-          cohortSize: Math.max(uniqueUsersSet.size, 1),
-          returnedUsers: Math.round(uniqueUsersSet.size * 0.72),
-          retentionRatePercentage: 72,
-          definition: 'Aktivitas kembali dalam rentang 24–48 jam pasca pendaftaran akun.'
-        },
+          cohortDate: cohortDateLabel,
+          cohortSize: retention.cohortSize,
+          returnedUsers: retention.d1 !== null ? Math.round(retention.cohortSize * (retention.d1 / 100)) : 0,
+          retentionRatePercentage: retention.d1,
+          definition: 'Aktivitas kembali dalam rentang 24–48 jam pasca pendaftaran akun.',
+          eligible: retention.d1Eligible
+        } as any,
         {
           period: 'Day 7',
-          cohortDate: thirtyDaysAgoIso.split('T')[0],
-          cohortSize: Math.max(uniqueUsersSet.size, 1),
-          returnedUsers: Math.round(uniqueUsersSet.size * 0.54),
-          retentionRatePercentage: 54,
-          definition: 'Aktivitas kembali dalam rentang hari ke-6 hingga ke-8 pasca onboarding.'
-        },
+          cohortDate: cohortDateLabel,
+          cohortSize: retention.cohortSize,
+          returnedUsers: retention.d7 !== null ? Math.round(retention.cohortSize * (retention.d7 / 100)) : 0,
+          retentionRatePercentage: retention.d7,
+          definition: 'Aktivitas kembali dalam rentang hari ke-6 hingga ke-8 pasca onboarding.',
+          eligible: retention.d7Eligible
+        } as any,
         {
           period: 'Day 30',
-          cohortDate: thirtyDaysAgoIso.split('T')[0],
-          cohortSize: Math.max(uniqueUsersSet.size, 1),
-          returnedUsers: Math.round(uniqueUsersSet.size * 0.38),
-          retentionRatePercentage: 38,
-          definition: 'Aktivitas belajar konsisten setelah 30 hari pemakaian platform.'
-        }
+          cohortDate: cohortDateLabel,
+          cohortSize: retention.cohortSize,
+          returnedUsers: retention.d30 !== null ? Math.round(retention.cohortSize * (retention.d30 / 100)) : 0,
+          retentionRatePercentage: retention.d30,
+          definition: 'Aktivitas belajar konsisten setelah 30 hari pemakaian platform.',
+          eligible: retention.d30Eligible
+        } as any
       ];
 
       const summary: AnalyticsSummaryDTO = {
-        totalEvents: eventsSnap.size,
+        totalEvents,
         uniqueUsers: uniqueUsersSet.size,
         activeSessions: activeSessionsSet.size,
         eventsByName,
@@ -3495,6 +3747,178 @@ async function startServer() {
     } catch (err: any) {
       console.error('Error fetching audit logs:', err);
       res.status(500).json({ error: 'Failed to retrieve audit logs' });
+    }
+  });
+
+  // URL normalization and validation helper for About Us links
+  function sanitizeAndNormalizeAboutUrl(url: string | undefined, platform: string): string | undefined {
+    if (!url || !url.trim()) return undefined;
+    let trimmed = url.trim();
+
+    if (platform === 'email') {
+      if (trimmed.startsWith('mailto:')) {
+        return trimmed;
+      }
+      if (trimmed.includes('@')) {
+        return `mailto:${trimmed}`;
+      }
+      return undefined;
+    }
+
+    const lower = trimmed.toLowerCase();
+    if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('vbscript:')) {
+      return undefined;
+    }
+
+    if (!/^https?:\/\//i.test(trimmed)) {
+      trimmed = `https://${trimmed}`;
+    }
+
+    try {
+      const parsed = new URL(trimmed);
+      const host = parsed.hostname.toLowerCase();
+      if (platform === 'linkedin' && !host.includes('linkedin.com')) return undefined;
+      if (platform === 'github' && !host.includes('github.com')) return undefined;
+      if (platform === 'tiktok' && !host.includes('tiktok.com')) return undefined;
+      if (platform === 'instagram' && !host.includes('instagram.com')) return undefined;
+      if (platform === 'facebook' && !host.includes('facebook.com')) return undefined;
+      
+      return parsed.toString();
+    } catch {
+      return undefined;
+    }
+  }
+
+  const DEFAULT_ABOUT_US = {
+    name: "COMMANDEV Team",
+    role: "Pendidik Arsitektur Perangkat Lunak",
+    shortBio: "Membangun generasi software engineer masa depan dengan keterampilan coding praktis, interaktif, dan teruji skala produksi.",
+    description: "COMMANDEV Academy didirikan dengan satu misi utama: menutup celah antara pendidikan akademis dengan realitas industri rekayasa perangkat lunak modern. Kami berfokus 100% pada demonstrable skills, running code mastery, dan proyek portofolio nyata yang dievaluasi secara otomatis dan akurat oleh mesin penilai cerdas kami.",
+    photoUrl: "",
+    status: "published",
+    socialLinks: {
+      linkedin: "https://linkedin.com/company/commandev",
+      github: "https://github.com/commandev",
+      tiktok: "",
+      email: "contact@commandev.com",
+      instagram: "",
+      facebook: ""
+    }
+  };
+
+  // Public API: Retrieve published About Us content (sanitized, public-only DTO)
+  app.get('/api/about', async (req, res) => {
+    try {
+      const doc = await adminDb.collection('site_content').doc('about_us').get();
+      if (!doc.exists) {
+        return res.json(DEFAULT_ABOUT_US);
+      }
+      const data = doc.data();
+      if (!data || data.status !== 'published') {
+        // Fall back to default if latest is draft but first is missing
+        return res.json(DEFAULT_ABOUT_US);
+      }
+      // Sanitized safe public DTO
+      res.json({
+        name: String(data.name || '').trim(),
+        role: String(data.role || '').trim(),
+        shortBio: String(data.shortBio || '').trim(),
+        description: String(data.description || '').trim(),
+        photoUrl: String(data.photoUrl || '').trim(),
+        status: 'published',
+        socialLinks: {
+          linkedin: data.socialLinks?.linkedin || '',
+          github: data.socialLinks?.github || '',
+          tiktok: data.socialLinks?.tiktok || '',
+          email: data.socialLinks?.email || '',
+          instagram: data.socialLinks?.instagram || '',
+          facebook: data.socialLinks?.facebook || ''
+        }
+      });
+    } catch (err: any) {
+      console.error('Error fetching public About Us:', err);
+      res.status(500).json({ error: 'Gagal memuat profil About Us' });
+    }
+  });
+
+  // Admin API: Retrieve latest About Us content (including draft state)
+  app.get('/api/admin/about', authenticateFirebaseUser, requireAdmin, async (req, res) => {
+    try {
+      const doc = await adminDb.collection('site_content').doc('about_us').get();
+      if (!doc.exists) {
+        return res.json(DEFAULT_ABOUT_US);
+      }
+      res.json(doc.data());
+    } catch (err: any) {
+      console.error('Error fetching admin About Us:', err);
+      res.status(500).json({ error: 'Gagal memuat data admin About Us' });
+    }
+  });
+
+  // Admin API: Update/Save/Publish About Us content
+  app.put('/api/admin/about', authenticateFirebaseUser, requireAdmin, async (req, res) => {
+    try {
+      const { name, role, shortBio, description, photoUrl, status, socialLinks } = req.body;
+
+      if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ error: 'Nama tidak boleh kosong.' });
+      }
+      if (!role || typeof role !== 'string' || !role.trim()) {
+        return res.status(400).json({ error: 'Role/title tidak boleh kosong.' });
+      }
+      if (status !== 'draft' && status !== 'published' && status !== 'review' && status !== 'archived') {
+        return res.status(400).json({ error: 'Status publikasi tidak valid.' });
+      }
+
+      // Safe validation and normalization of social links
+      const cleanSocial: any = {};
+      if (socialLinks && typeof socialLinks === 'object' && !Array.isArray(socialLinks)) {
+        cleanSocial.linkedin = sanitizeAndNormalizeAboutUrl(socialLinks.linkedin, 'linkedin') || '';
+        cleanSocial.github = sanitizeAndNormalizeAboutUrl(socialLinks.github, 'github') || '';
+        cleanSocial.tiktok = sanitizeAndNormalizeAboutUrl(socialLinks.tiktok, 'tiktok') || '';
+        cleanSocial.email = sanitizeAndNormalizeAboutUrl(socialLinks.email, 'email') || '';
+        cleanSocial.instagram = sanitizeAndNormalizeAboutUrl(socialLinks.instagram, 'instagram') || '';
+        cleanSocial.facebook = sanitizeAndNormalizeAboutUrl(socialLinks.facebook, 'facebook') || '';
+      }
+
+      const cleanPhotoUrl = photoUrl && typeof photoUrl === 'string' && (photoUrl.startsWith('data:image/') || photoUrl.startsWith('https://') || photoUrl.startsWith('/'))
+        ? photoUrl
+        : '';
+
+      const updatedData = {
+        name: name.trim(),
+        role: role.trim(),
+        shortBio: (shortBio || '').trim(),
+        description: (description || '').trim(),
+        photoUrl: cleanPhotoUrl,
+        status,
+        socialLinks: cleanSocial,
+        updatedAt: new Date().toISOString(),
+        updatedBy: req.user!.uid
+      };
+
+      await adminDb.collection('site_content').doc('about_us').set(updatedData);
+
+      // Save CMS Audit Log Entry
+      try {
+        const logId = `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        await adminDb.collection('audit_logs').doc(logId).set({
+          id: logId,
+          adminId: req.user!.uid,
+          action: status === 'published' ? 'publish_about' : 'update_about_draft',
+          targetType: 'about_us',
+          targetId: 'about_us',
+          timestamp: new Date().toISOString(),
+          details: { name: updatedData.name, status }
+        });
+      } catch (logErr) {
+        console.error('Failed to save audit log for About Us:', logErr);
+      }
+
+      res.json({ success: true, data: updatedData });
+    } catch (err: any) {
+      console.error('Error saving About Us:', err);
+      res.status(500).json({ error: 'Gagal menyimpan profil About Us' });
     }
   });
 

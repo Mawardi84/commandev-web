@@ -145,11 +145,31 @@ export interface ExerciseSolutionDoc {
   updatedBy?: string;
 }
 
+export interface AboutUsSocialLinks {
+  linkedin?: string;
+  github?: string;
+  tiktok?: string;
+  email?: string;
+  instagram?: string;
+  facebook?: string;
+}
+
+export interface AboutUsContent {
+  name: string;
+  role: string;
+  shortBio: string;
+  description: string;
+  photoUrl?: string;
+  status: ContentStatus;
+  socialLinks: AboutUsSocialLinks;
+  updatedAt?: string;
+}
+
 export interface AuditLogEntry {
   id?: string;
   adminId: string;
   action: string;
-  targetType: 'course' | 'level' | 'module' | 'lesson' | 'exercise' | 'quiz' | 'settings';
+  targetType: 'course' | 'level' | 'module' | 'lesson' | 'exercise' | 'quiz' | 'settings' | 'about_us';
   targetId: string;
   timestamp: string;
   details?: Record<string, any>;

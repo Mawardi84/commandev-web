@@ -1,6 +1,6 @@
 import { auth } from '../../lib/firebase';
 import { QuizQuestion } from '../../types';
-import { CmsCourse, CmsLevel, CmsModule, CmsLesson, CmsExercise, ExerciseSolutionDoc, QuizSolutionDoc, ContentStatus, AuditLogEntry } from './types';
+import { CmsCourse, CmsLevel, CmsModule, CmsLesson, CmsExercise, ExerciseSolutionDoc, QuizSolutionDoc, ContentStatus, AuditLogEntry, AboutUsContent } from './types';
 import { curriculumService } from './curriculumService';
 
 async function getAuthHeader(required: boolean = true): Promise<HeadersInit> {
@@ -11,23 +11,11 @@ async function getAuthHeader(required: boolean = true): Promise<HeadersInit> {
     const token = await auth?.currentUser?.getIdToken();
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
-    } else {
-      const savedRole = typeof window !== 'undefined' 
-        ? (localStorage.getItem('commandev_user_role') || localStorage.getItem('codera_user_role')) 
-        : null;
-      if (savedRole === 'owner') {
-        headers['Authorization'] = 'Bearer site-owner-admin-token';
-      } else if (required) {
-        throw new Error('User is not authenticated');
-      }
+    } else if (required) {
+      throw new Error('User is not authenticated');
     }
   } catch (err: any) {
-    const savedRole = typeof window !== 'undefined' 
-      ? (localStorage.getItem('commandev_user_role') || localStorage.getItem('codera_user_role')) 
-      : null;
-    if (savedRole === 'owner') {
-      headers['Authorization'] = 'Bearer site-owner-admin-token';
-    } else if (required) {
+    if (required) {
       throw new Error(err.message || 'User is not authenticated');
     }
   }
@@ -982,6 +970,48 @@ export class CmsDataService {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `HTTP ${res.status}: Gagal mengirim proyek`);
+    }
+    return await res.json();
+  }
+
+  /**
+   * Fetch published About Us content for public view
+   */
+  async getAboutUsPublic(): Promise<AboutUsContent> {
+    const res = await fetch('/api/about');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Gagal mengambil profil`);
+    }
+    return await res.json();
+  }
+
+  /**
+   * Fetch latest About Us content (Admin Only)
+   */
+  async getAboutUsAdmin(): Promise<AboutUsContent> {
+    const headers = await getAuthHeader();
+    const res = await fetch('/api/admin/about', { headers });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Gagal mengambil profil admin`);
+    }
+    return await res.json();
+  }
+
+  /**
+   * Update and save draft/published About Us content (Admin Only)
+   */
+  async updateAboutUs(content: AboutUsContent): Promise<{ success: boolean }> {
+    const headers = await getAuthHeader();
+    const res = await fetch('/api/admin/about', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(content)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Gagal menyimpan profil`);
     }
     return await res.json();
   }

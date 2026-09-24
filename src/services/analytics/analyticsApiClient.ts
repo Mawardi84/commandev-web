@@ -10,12 +10,12 @@ import { AnalyticsSummaryDTO, AnalyticsDateRange, RawEventsQueryResponse } from 
 import { auth } from '../../lib/firebase';
 
 export async function getAdminAuthHeaders(): Promise<HeadersInit> {
-  let token = 'site-owner-admin-token';
+  let token = '';
   if (auth && auth.currentUser) {
     try {
       token = await auth.currentUser.getIdToken();
-    } catch {
-      token = 'site-owner-admin-token';
+    } catch (e) {
+      console.error('Error fetching admin token:', e);
     }
   }
   return {

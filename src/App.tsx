@@ -3,6 +3,7 @@ import { UserProgress, Course } from './types';
 import { COURSES } from './data/curriculum';
 import { curriculumService } from './services/curriculum';
 import { CodingAcademyLanding } from './components/LandingPage';
+import { AboutUsView } from './components/AboutUsView';
 import { Academy } from './components/Academy';
 import { PlaygroundView } from './components/PlaygroundView';
 import { PracticeView } from './components/PracticeView';
@@ -31,7 +32,7 @@ import { SettingsProvider } from './lib/SettingsContext';
 import { PublicProjectProgressDTO } from './types/projectProgress';
 import { analyticsService } from './services/analytics';
 
-type AppState = 'landing' | 'app' | 'studio' | 'admin-login' | 'admin-dashboard';
+type AppState = 'landing' | 'app' | 'studio' | 'admin-login' | 'admin-dashboard' | 'about-us';
 
 export default function App() {
   const { user, userRole, loading, logout, signInWithGoogle, signInWithEmail, signUpWithEmail, loginAsOwner, loginAsGuest, authError, clearAuthError } = useAuth();
@@ -145,6 +146,10 @@ export default function App() {
         return { appState: 'admin-login', section: 'cms' };
       }
 
+      if (target === 'about' || target === 'about-us' || target === 'aboutus') {
+        return { appState: 'about-us', section: 'academy' };
+      }
+
       if (path === 'admin' || path === 'cms' || target === 'admin' || target === 'cms') {
         return { appState: 'admin-dashboard', section: 'cms' };
       }
@@ -217,6 +222,10 @@ export default function App() {
       const targetHash = `#${currentSection}`;
       if (window.location.hash !== targetHash) {
         window.history.replaceState(null, '', targetHash);
+      }
+    } else if (appState === 'about-us') {
+      if (window.location.hash !== '#about-us') {
+        window.history.replaceState(null, '', '#about-us');
       }
     }
   }, [appState, currentSection]);
@@ -585,6 +594,25 @@ export default function App() {
             <CodingAcademyLanding 
               onStartLearning={handleStartLearning} 
               onOpenAuth={() => setShowAuthModal(true)} 
+              onViewAboutUs={() => setAppState('about-us')}
+            />
+          </motion.div>
+        )}
+
+        {appState === 'about-us' && (
+          <motion.div
+            key="about-us"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="min-h-screen w-full"
+          >
+            <AboutUsView 
+              onBack={() => {
+                window.history.pushState({}, '', '/');
+                setAppState('landing');
+              }}
             />
           </motion.div>
         )}
