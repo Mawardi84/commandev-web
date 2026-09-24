@@ -1,0 +1,50 @@
+{
+  "name": "react-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=server.cjs",
+    "start": "node server.cjs",
+    "clean": "rm -rf dist server.cjs server.cjs.map",
+    "lint": "tsc --noEmit",
+    "test": "tsx src/tests/phase5d_progress_completion_test.ts",
+    "test:5c7": "tsx src/tests/phase5c7_security_closure_test.ts",
+    "test:5d": "tsx src/tests/phase5d_progress_completion_test.ts",
+    "test:5e": "tsx src/tests/phase5e_gamification_test.ts",
+    "test:5f": "tsx src/tests/phase5f_security_closure_test.ts",
+    "test:5g": "tsx src/tests/phase5g_final_closure_test.ts",
+    "test:admin": "tsx src/tests/admin_cms_v25_test.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^2.23.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.1",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "firebase": "^12.19.0",
+    "firebase-admin": "^14.4.0",
+    "lucide-react": "^0.546.0",
+    "motion": "^13.4.0",
+    "prismjs": "^1.30.0",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "react-markdown": "^10.1.0",
+    "react-simple-code-editor": "^0.14.1",
+    "vite": "^8.3.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.14.0",
+    "@types/prismjs": "^1.26.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "autoprefixer": "^10.4.21",
+    "esbuild": "^0.28.2",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vite-plugin-pwa": "^1.3.0"
+  }
+}

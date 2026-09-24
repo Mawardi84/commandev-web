@@ -1,0 +1,6 @@
+{
+  "name": "COMMANDEV",
+  "description": "COMMANDEV — Interactive Developer Learning Platform. Learn. Code. Build. Master. Belajar pemrograman interaktif (HTML, CSS, JS, Python, PHP, MySQL, C, C++, Go), roadmap karir rekayasa perangkat lunak, playground, proyek, dan AI Tutor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

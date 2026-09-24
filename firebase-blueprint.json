@@ -1,0 +1,397 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account and progress data for CODERA Coding Academy",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The unique Firebase Auth UID of the user"
+        },
+        "xp": {
+          "type": "number",
+          "description": "Total developer experience points earned"
+        },
+        "streak": {
+          "type": "number",
+          "description": "Daily learning streak count in days"
+        },
+        "completedLessons": {
+          "type": "array",
+          "description": "List of completed lesson, challenge, and project IDs"
+        },
+        "completedProjects": {
+          "type": "array",
+          "description": "List of completed project IDs"
+        },
+        "courseProgress": {
+          "type": "object",
+          "description": "Map of courseId to completion percentage"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name"
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        }
+      },
+      "required": ["xp", "streak", "completedLessons"]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public leaderboard record for a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "xp": { "type": "number" },
+        "streak": { "type": "number" },
+        "completedCount": { "type": "number" },
+        "rankTitle": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "displayName", "xp", "streak"]
+    },
+    "CommunityFeedItem": {
+      "title": "CommunityFeedItem",
+      "description": "Public milestone activity feed item",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "xpEarned": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "userName", "title", "createdAt"]
+    },
+    "CustomChallenge": {
+      "title": "CustomChallenge",
+      "description": "Community and instructor created coding challenges",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "difficulty": { "type": "string" },
+        "language": { "type": "string" },
+        "starterCode": { "type": "string" },
+        "solutionCode": { "type": "string" },
+        "xpReward": { "type": "number" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "difficulty", "language", "starterCode", "authorId"]
+    },
+    "CmsCourse": {
+      "title": "CmsCourse",
+      "description": "Curriculum course managed by CMS",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "slug": { "type": "string" },
+        "description": { "type": "string" },
+        "shortDescription": { "type": "string" },
+        "category": { "type": "string" },
+        "difficulty": { "type": "string" },
+        "icon": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "review", "published", "archived"] },
+        "order": { "type": "number" },
+        "version": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id", "title", "status", "version"]
+    },
+    "CmsLevel": {
+      "title": "CmsLevel",
+      "description": "Curriculum level or stage within a course",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "title": { "type": "string" },
+        "slug": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "review", "published", "archived"] },
+        "order": { "type": "number" },
+        "version": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id", "courseId", "title", "status", "version"]
+    },
+    "CmsModule": {
+      "title": "CmsModule",
+      "description": "Curriculum module within a course or level",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "levelId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "review", "published", "archived"] },
+        "order": { "type": "number" },
+        "version": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id", "courseId", "title", "status", "version"]
+    },
+    "CmsLesson": {
+      "title": "CmsLesson",
+      "description": "Curriculum lesson, exercise, challenge, quiz, or project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "moduleId": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["learn", "practice", "challenge", "quiz", "project"] },
+        "language": { "type": "string" },
+        "content": { "type": "array" },
+        "starterCode": { "type": "string" },
+        "starterCss": { "type": "string" },
+        "starterJs": { "type": "string" },
+        "starterPy": { "type": "string" },
+        "hints": { "type": "array" },
+        "xpReward": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "review", "published", "archived"] },
+        "order": { "type": "number" },
+        "version": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id", "courseId", "moduleId", "title", "type", "status", "version"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable security and CMS action audit log entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "adminId": { "type": "string" },
+        "action": { "type": "string" },
+        "targetType": { "type": "string" },
+        "targetId": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "details": { "type": "object" }
+      },
+      "required": ["adminId", "action", "targetType", "targetId", "timestamp"]
+    },
+    "QuizSolution": {
+      "title": "QuizSolution",
+      "description": "Protected quiz answer keys and grading solutions accessible only to administrators",
+      "type": "object",
+      "properties": {
+        "lessonId": { "type": "string" },
+        "solutions": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["lessonId", "solutions"]
+    },
+    "CmsExercise": {
+      "title": "CmsExercise",
+      "description": "Interactive exercise unit within a lesson",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lessonId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "levelId": { "type": "string" },
+        "moduleId": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "starterCode": { "type": "string" },
+        "starterCss": { "type": "string" },
+        "starterJs": { "type": "string" },
+        "starterPy": { "type": "string" },
+        "requirements": { "type": "array" },
+        "hints": { "type": "array" },
+        "xpReward": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "review", "published", "archived"] },
+        "order": { "type": "number" },
+        "version": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "lessonId", "title", "type", "status", "version"]
+    },
+    "ExerciseSolution": {
+      "title": "ExerciseSolution",
+      "description": "Protected exercise solutions, expected output, and hidden test cases (Admin Only)",
+      "type": "object",
+      "properties": {
+        "exerciseId": { "type": "string" },
+        "solutionCode": { "type": "string" },
+        "expectedOutput": { "type": "string" },
+        "hiddenTests": { "type": "array" },
+        "gradingRules": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["exerciseId"]
+    },
+    "ProjectEvaluationDefinition": {
+      "title": "ProjectEvaluationDefinition",
+      "description": "Protected project evaluation rules, criteria, and passing thresholds (Admin Only)",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "version": { "type": "number" },
+        "passingScore": { "type": "number" },
+        "criteria": { "type": "array" },
+        "status": { "type": "string", "enum": ["draft", "published"] },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["projectId", "version", "passingScore", "criteria", "status"]
+    },
+    "ProjectSubmission": {
+      "title": "ProjectSubmission",
+      "description": "Student project submission record and sanitized evaluation result",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "userId": { "type": "string" },
+        "files": { "type": "object" },
+        "submittedAt": { "type": "string" },
+        "evaluatorVersion": { "type": "number" },
+        "status": { "type": "string" },
+        "evaluationResult": { "type": "object" }
+      },
+      "required": ["id", "projectId", "userId", "files", "submittedAt", "evaluatorVersion"]
+    },
+    "ProjectCompletion": {
+      "title": "ProjectCompletion",
+      "description": "Authoritative student project completion record and XP reward",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "userId": { "type": "string" },
+        "completedAt": { "type": "string" },
+        "submissionId": { "type": "string" },
+        "evaluatorVersion": { "type": "number" },
+        "score": { "type": "number" },
+        "xpAwarded": { "type": "number" },
+        "status": { "type": "string", "enum": ["completed"] }
+      },
+      "required": ["id", "projectId", "userId", "completedAt", "submissionId", "evaluatorVersion", "score", "xpAwarded", "status"]
+    },
+    "AnalyticsEvent": {
+      "title": "AnalyticsEvent",
+      "description": "Observational analytics telemetry event stream for user activity and learning metrics",
+      "type": "object",
+      "properties": {
+        "eventId": { "type": "string" },
+        "eventName": { "type": "string" },
+        "userId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "source": { "type": "string", "enum": ["web", "server"] },
+        "courseId": { "type": "string" },
+        "moduleId": { "type": "string" },
+        "lessonId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "quizId": { "type": "string" },
+        "challengeId": { "type": "string" },
+        "simulatorId": { "type": "string" },
+        "properties": { "type": "object" }
+      },
+      "required": ["eventId", "eventName", "timestamp", "source"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Stores user learning profile, XP, completed lessons, and course progress"
+    },
+    "/leaderboard/{userId}": {
+      "schema": "LeaderboardEntry",
+      "description": "Public leaderboard rankings"
+    },
+    "/community_feed/{feedId}": {
+      "schema": "CommunityFeedItem",
+      "description": "Public activity feed for student milestones"
+    },
+    "/custom_challenges/{challengeId}": {
+      "schema": "CustomChallenge",
+      "description": "Community and instructor created coding challenges"
+    },
+    "/courses/{courseId}": {
+      "schema": "CmsCourse",
+      "description": "CMS published and draft course metadata"
+    },
+    "/levels/{levelId}": {
+      "schema": "CmsLevel",
+      "description": "CMS level metadata within a course"
+    },
+    "/modules/{moduleId}": {
+      "schema": "CmsModule",
+      "description": "CMS module metadata"
+    },
+    "/lessons/{lessonId}": {
+      "schema": "CmsLesson",
+      "description": "CMS lesson content and exercises"
+    },
+    "/exercises/{exerciseId}": {
+      "schema": "CmsExercise",
+      "description": "CMS interactive exercise units within lessons"
+    },
+    "/exercise_solutions/{exerciseId}": {
+      "schema": "ExerciseSolution",
+      "description": "Protected exercise solution code and hidden test cases (Admin Only)"
+    },
+    "/quiz_solutions/{lessonId}": {
+      "schema": "QuizSolution",
+      "description": "Protected quiz answer keys and solutions"
+    },
+    "/project_evaluations/{projectId}": {
+      "schema": "ProjectEvaluationDefinition",
+      "description": "Protected project evaluation rules, criteria, and passing thresholds (Admin Only)"
+    },
+    "/project_evaluations/{projectId}/versions/{versionId}": {
+      "schema": "ProjectEvaluationDefinition",
+      "description": "Immutable versioned snapshots of published project evaluation rules (Admin Only)"
+    },
+    "/project_submissions/{submissionId}": {
+      "schema": "ProjectSubmission",
+      "description": "Student project submission records and results"
+    },
+    "/project_completions/{completionId}": {
+      "schema": "ProjectCompletion",
+      "description": "Authoritative student project completion records (Admin/Server writes only)"
+    },
+    "/analytics_events/{eventId}": {
+      "schema": "AnalyticsEvent",
+      "description": "Observational analytics telemetry event stream"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Administrative audit logs"
+    }
+  }
+}

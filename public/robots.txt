@@ -1,0 +1,6 @@
+# robots.txt for CODERA Interactive Coding Academy
+User-agent: *
+Allow: /
+
+# Sitemaps
+Sitemap: https://coderaacademy.vercel.app/sitemap.xml

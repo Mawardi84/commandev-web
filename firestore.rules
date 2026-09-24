@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.keys().hasAny(['admin']) && request.auth.token.admin == true) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUserProfile(data) {
+      return data.xp is number && data.xp >= 0 &&
+             data.streak is number && data.streak >= 0 &&
+             data.completedLessons is list && data.completedLessons.size() <= 5000;
+    }
+
+    // User private profile
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserProfile(request.resource.data);
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUserProfile(request.resource.data) && request.resource.data.role == resource.data.role;
+      allow delete: if isOwner(userId) && isValidId(userId);
+    }
+
+    // Admin document access - Read self authority check document, restrict lists & writes
+    match /admins/{adminId} {
+      allow get: if isOwner(adminId) && isValidId(adminId);
+      allow list, write: if false;
+    }
+
+    // Public Leaderboard entries
+    match /leaderboard/{userId} {
+      allow get, list: if true;
+      allow create, update: if isOwner(userId) && isValidId(userId) && 
+        request.resource.data.xp is number && request.resource.data.streak is number;
+      allow delete: if isOwner(userId);
+    }
+
+    // Community Milestone Feed
+    match /community_feed/{feedId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Community & Custom Challenges (CMS)
+    match /custom_challenges/{challengeId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+    }
+
+    // CMS Courses
+    match /courses/{courseId} {
+      allow get: if isValidId(courseId) && ((isSignedIn() && resource.data.status == 'published') || isAdmin());
+      allow list: if (isSignedIn() && resource.data.status == 'published') || isAdmin();
+      allow create, update, delete: if isAdmin() && isValidId(courseId);
+    }
+
+    // CMS Levels
+    match /levels/{levelId} {
+      allow get: if isValidId(levelId) && ((isSignedIn() && resource.data.status == 'published') || isAdmin());
+      allow list: if (isSignedIn() && resource.data.status == 'published') || isAdmin();
+      allow create, update, delete: if isAdmin() && isValidId(levelId);
+    }
+
+    // CMS Modules
+    match /modules/{moduleId} {
+      allow get: if isValidId(moduleId) && ((isSignedIn() && resource.data.status == 'published') || isAdmin());
+      allow list: if (isSignedIn() && resource.data.status == 'published') || isAdmin();
+      allow create, update, delete: if isAdmin() && isValidId(moduleId);
+    }
+
+    // CMS Lessons
+    match /lessons/{lessonId} {
+      allow get: if isValidId(lessonId) && ((isSignedIn() && resource.data.status == 'published') || isAdmin());
+      allow list: if (isSignedIn() && resource.data.status == 'published') || isAdmin();
+      allow create, update, delete: if isAdmin() && isValidId(lessonId);
+    }
+
+    // CMS Exercises
+    match /exercises/{exerciseId} {
+      allow get: if isValidId(exerciseId) && ((isSignedIn() && resource.data.status == 'published') || isAdmin());
+      allow list: if (isSignedIn() && resource.data.status == 'published') || isAdmin();
+      allow create, update, delete: if isAdmin() && isValidId(exerciseId);
+    }
+
+    // Protected Exercise Solutions and Hidden Tests (Admin Only)
+    match /exercise_solutions/{exerciseId} {
+      allow read, write: if isAdmin() && isValidId(exerciseId);
+    }
+
+    // Protected Quiz Answer Keys and Solutions (Admin Only)
+    match /quiz_solutions/{lessonId} {
+      allow read, write: if isAdmin() && isValidId(lessonId);
+    }
+
+    // Protected Project Evaluation Definitions & Version History (Admin Only)
+    match /project_evaluations/{projectId} {
+      allow read, write: if isAdmin() && isValidId(projectId);
+
+      match /versions/{versionId} {
+        allow read, write: if isAdmin() && isValidId(versionId);
+      }
+    }
+
+    // Security & Administrative Audit Logs (Admin Only)
+    match /audit_logs/{logId} {
+      allow read, write: if isAdmin() && isValidId(logId);
+    }
+
+    // Student Exercise Attempts
+    match /exercise_attempts/{attemptId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Student Project Submissions
+    match /project_submissions/{submissionId} {
+      allow get: if isSignedIn() && isValidId(submissionId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    // Student Project Completions (Authoritative Server Writes, Learner Read Own Only)
+    match /project_completions/{completionId} {
+      allow get: if isSignedIn() && isValidId(completionId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    // Canonical Analytics Event Stream (Admin Full Access, Learners Write Validated Own Events Only, No Global Student Read)
+    match /analytics_events/{eventId} {
+      allow get, list: if isAdmin();
+      allow create: if (isSignedIn() && isValidId(eventId) && request.resource.data.userId == request.auth.uid) || isAdmin();
+      allow update, delete: if isAdmin();
+    }
+  }
+}
+
