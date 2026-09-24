@@ -27284,7 +27284,7 @@ function validateProjectEvaluationDefinition(def) {
     errors
   };
 }
-function evaluateProjectSubmission(submissionId, projectId, definition, files, projectFamily) {
+function evaluateProjectSubmission(submissionId, projectId2, definition, files, projectFamily) {
   const criteria = definition.criteria || [];
   let totalWeight = 0;
   let earnedWeight = 0;
@@ -27327,7 +27327,7 @@ function evaluateProjectSubmission(submissionId, projectId, definition, files, p
   }
   return sanitizeProjectEvaluationResult({
     submissionId,
-    projectId,
+    projectId: projectId2,
     score,
     passed,
     criteriaResults,
@@ -27756,26 +27756,26 @@ var DEFAULT_PROJECT_EVALUATION_DEFINITIONS = {
 
 // src/services/progression/projectProgressionService.ts
 async function recordProjectCompletion(adminDb2, params) {
-  const { userId, projectId, submissionId, score, passed, evaluatorVersion } = params;
+  const { userId, projectId: projectId2, submissionId, score, passed, evaluatorVersion } = params;
   if (!passed) {
     return {
-      projectId,
+      projectId: projectId2,
       completed: false,
       xpAwarded: 0,
       alreadyCompleted: false
     };
   }
-  const matchedProject = CODERA_PROJECTS.find((p) => p.id === projectId);
+  const matchedProject = CODERA_PROJECTS.find((p) => p.id === projectId2);
   if (!matchedProject || matchedProject.status !== "published") {
     return {
-      projectId,
+      projectId: projectId2,
       completed: false,
       xpAwarded: 0,
       alreadyCompleted: false
     };
   }
   const targetXp = Math.max(0, Number(matchedProject.xp) || 100);
-  const completionDocId = `${userId}_${projectId}`;
+  const completionDocId = `${userId}_${projectId2}`;
   const completionRef = adminDb2.collection("project_completions").doc(completionDocId);
   const userRef = adminDb2.collection("users").doc(userId);
   const txResult = await adminDb2.runTransaction(async (transaction) => {
@@ -27798,7 +27798,7 @@ async function recordProjectCompletion(adminDb2, params) {
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const newRecord = {
         id: completionDocId,
-        projectId,
+        projectId: projectId2,
         userId,
         completedAt: now,
         submissionId,
@@ -27808,7 +27808,7 @@ async function recordProjectCompletion(adminDb2, params) {
         status: "completed"
       };
       transaction.set(completionRef, newRecord);
-      const updatedCompletedList = Array.from(/* @__PURE__ */ new Set([...currentCompletedProjects, projectId]));
+      const updatedCompletedList = Array.from(/* @__PURE__ */ new Set([...currentCompletedProjects, projectId2]));
       transaction.set(
         userRef,
         {
@@ -27828,7 +27828,7 @@ async function recordProjectCompletion(adminDb2, params) {
     }
   });
   return {
-    projectId,
+    projectId: projectId2,
     completed: true,
     completedAt: txResult.completionRecord?.completedAt,
     submissionId: txResult.completionRecord?.submissionId,
@@ -27838,13 +27838,13 @@ async function recordProjectCompletion(adminDb2, params) {
     totalUserXp: txResult.userTotalXp
   };
 }
-async function getProjectProgress(adminDb2, userId, projectId) {
-  const completionDocId = `${userId}_${projectId}`;
+async function getProjectProgress(adminDb2, userId, projectId2) {
+  const completionDocId = `${userId}_${projectId2}`;
   const snap = await adminDb2.collection("project_completions").doc(completionDocId).get();
   if (snap.exists) {
     const data = snap.data();
     return {
-      projectId,
+      projectId: projectId2,
       completed: true,
       completedAt: data.completedAt,
       submissionId: data.submissionId,
@@ -27854,7 +27854,7 @@ async function getProjectProgress(adminDb2, userId, projectId) {
     };
   }
   return {
-    projectId,
+    projectId: projectId2,
     completed: false,
     xpAwarded: 0,
     alreadyCompleted: false
@@ -28069,8 +28069,31 @@ function validateAnalyticsEvent(event) {
 }
 
 // server.ts
-import_firebase_admin.default.initializeApp();
-var adminDb = (0, import_firestore.getFirestore)();
+var import_fs = __toESM(require("fs"), 1);
+var databaseId = void 0;
+var projectId = void 0;
+try {
+  const configPath = import_path.default.join(process.cwd(), "firebase-applet-config.json");
+  if (import_fs.default.existsSync(configPath)) {
+    const config = JSON.parse(import_fs.default.readFileSync(configPath, "utf8"));
+    databaseId = config.firestoreDatabaseId;
+    projectId = config.projectId;
+    if (databaseId) {
+      console.log(`[Firebase Admin] Initializing Firestore with custom database ID: ${databaseId}`);
+    }
+    if (projectId) {
+      console.log(`[Firebase Admin] Using explicit Project ID: ${projectId}`);
+    }
+  }
+} catch (err) {
+  console.error("Error loading firebase-applet-config.json for Admin Firestore:", err);
+}
+if (projectId) {
+  import_firebase_admin.default.initializeApp({ projectId });
+} else {
+  import_firebase_admin.default.initializeApp();
+}
+var adminDb = databaseId ? (0, import_firestore.getFirestore)(databaseId) : (0, import_firestore.getFirestore)();
 var adminAuth = (0, import_auth.getAuth)();
 var authenticateFirebaseUser = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -30181,16 +30204,16 @@ async function startServer() {
   });
   app.get("/api/admin/projects/:projectId/evaluation", authenticateFirebaseUser, requireAdmin, async (req, res) => {
     try {
-      const projectId = String(req.params.projectId);
-      const evalDoc = await adminDb.collection("project_evaluations").doc(projectId).get();
+      const projectId2 = String(req.params.projectId);
+      const evalDoc = await adminDb.collection("project_evaluations").doc(projectId2).get();
       let evaluationDefinition = evalDoc.exists ? evalDoc.data() : null;
       if (!evaluationDefinition) {
-        evaluationDefinition = DEFAULT_PROJECT_EVALUATION_DEFINITIONS[projectId] || null;
+        evaluationDefinition = DEFAULT_PROJECT_EVALUATION_DEFINITIONS[projectId2] || null;
       }
       if (!evaluationDefinition) {
         return res.status(404).json({ error: "Evaluation definition not found" });
       }
-      const versionsSnap = await adminDb.collection("project_evaluations").doc(projectId).collection("versions").orderBy("version", "desc").limit(20).get().catch(() => null);
+      const versionsSnap = await adminDb.collection("project_evaluations").doc(projectId2).collection("versions").orderBy("version", "desc").limit(20).get().catch(() => null);
       const versions = versionsSnap ? versionsSnap.docs.map((d) => d.data()) : [];
       res.json({ evaluationDefinition, versions });
     } catch (err) {
@@ -30200,10 +30223,10 @@ async function startServer() {
   });
   app.put("/api/admin/projects/:projectId/evaluation", authenticateFirebaseUser, requireAdmin, async (req, res) => {
     try {
-      const projectId = String(req.params.projectId);
+      const projectId2 = String(req.params.projectId);
       const { criteria, passingScore = 70, status = "draft", version = 1 } = req.body || {};
       const evalData = {
-        projectId,
+        projectId: projectId2,
         version: Number(version) || 1,
         passingScore: Number(passingScore) || 70,
         criteria: Array.isArray(criteria) ? criteria : [],
@@ -30218,8 +30241,8 @@ async function startServer() {
           details: validation.errors
         });
       }
-      await adminDb.collection("project_evaluations").doc(projectId).set(evalData);
-      await logAudit(req.user.uid, "UPDATE", "project_evaluation", projectId, {
+      await adminDb.collection("project_evaluations").doc(projectId2).set(evalData);
+      await logAudit(req.user.uid, "UPDATE", "project_evaluation", projectId2, {
         version: evalData.version,
         status: evalData.status,
         criteriaCount: evalData.criteria.length,
@@ -30233,9 +30256,9 @@ async function startServer() {
   });
   app.post("/api/admin/projects/:projectId/evaluation/publish", authenticateFirebaseUser, requireAdmin, async (req, res) => {
     try {
-      const projectId = String(req.params.projectId);
+      const projectId2 = String(req.params.projectId);
       const { criteria, passingScore = 70 } = req.body || {};
-      const existingDoc = await adminDb.collection("project_evaluations").doc(projectId).get();
+      const existingDoc = await adminDb.collection("project_evaluations").doc(projectId2).get();
       let nextVersion = 1;
       if (existingDoc.exists) {
         const existingData = existingDoc.data();
@@ -30246,7 +30269,7 @@ async function startServer() {
         }
       }
       const publishedData = {
-        projectId,
+        projectId: projectId2,
         version: nextVersion,
         passingScore: Number(passingScore) || 70,
         criteria: Array.isArray(criteria) ? criteria : existingDoc.exists ? existingDoc.data()?.criteria : [],
@@ -30261,13 +30284,13 @@ async function startServer() {
           details: validation.errors
         });
       }
-      await adminDb.collection("project_evaluations").doc(projectId).set(publishedData);
-      await adminDb.collection("project_evaluations").doc(projectId).collection("versions").doc(String(nextVersion)).set({
+      await adminDb.collection("project_evaluations").doc(projectId2).set(publishedData);
+      await adminDb.collection("project_evaluations").doc(projectId2).collection("versions").doc(String(nextVersion)).set({
         ...publishedData,
         publishedAt: (/* @__PURE__ */ new Date()).toISOString(),
         publishedBy: req.user.uid
       });
-      await logAudit(req.user.uid, "PUBLISH", "project_evaluation", projectId, {
+      await logAudit(req.user.uid, "PUBLISH", "project_evaluation", projectId2, {
         version: nextVersion,
         criteriaCount: publishedData.criteria.length,
         passingScore: publishedData.passingScore
@@ -30280,13 +30303,13 @@ async function startServer() {
   });
   app.post("/api/admin/projects/:projectId/evaluation/preview", authenticateFirebaseUser, requireAdmin, async (req, res) => {
     try {
-      const projectId = String(req.params.projectId);
+      const projectId2 = String(req.params.projectId);
       const { definition, files = {} } = req.body || {};
       if (!definition || typeof definition !== "object") {
         return res.status(400).json({ error: "Evaluation definition is required for preview" });
       }
       const evalDef = {
-        projectId,
+        projectId: projectId2,
         version: Number(definition.version) || 1,
         passingScore: Number(definition.passingScore) || 70,
         criteria: Array.isArray(definition.criteria) ? definition.criteria : [],
@@ -30300,11 +30323,11 @@ async function startServer() {
           details: validation.errors
         });
       }
-      const proj = CODERA_PROJECTS.find((p) => p.id === projectId) || ALL_CODERA_PROJECTS.find((p) => p.id === projectId);
+      const proj = CODERA_PROJECTS.find((p) => p.id === projectId2) || ALL_CODERA_PROJECTS.find((p) => p.id === projectId2);
       const projectFamily = proj?.category === "python" ? "python" : proj?.category === "react" ? "react" : proj?.category === "backend" ? "backend" : proj?.category === "fullstack" ? "fullstack" : "web";
       const previewResult = evaluateProjectSubmission(
         `preview-${Date.now()}`,
-        projectId,
+        projectId2,
         evalDef,
         files,
         projectFamily
@@ -30548,7 +30571,7 @@ async function startServer() {
       const limitCount = Math.min(Math.max(parseInt(String(req.query.limit || "25"), 10) || 25, 1), 100);
       const eventName = req.query.eventName ? String(req.query.eventName).trim() : null;
       const courseId = req.query.courseId ? String(req.query.courseId).trim() : null;
-      const projectId = req.query.projectId ? String(req.query.projectId).trim() : null;
+      const projectId2 = req.query.projectId ? String(req.query.projectId).trim() : null;
       const userId = req.query.userId ? String(req.query.userId).trim() : null;
       const source = req.query.source ? String(req.query.source).trim() : null;
       let query = adminDb.collection("analytics_events");
@@ -30558,8 +30581,8 @@ async function startServer() {
       if (courseId) {
         query = query.where("courseId", "==", courseId);
       }
-      if (projectId) {
-        query = query.where("projectId", "==", projectId);
+      if (projectId2) {
+        query = query.where("projectId", "==", projectId2);
       }
       if (userId) {
         query = query.where("userId", "==", userId);
@@ -31151,9 +31174,9 @@ async function startServer() {
   }
   const DEFAULT_ABOUT_US = {
     name: "COMMANDEV Team",
-    role: "Pendidik Arsitektur Perangkat Lunak",
-    shortBio: "Membangun generasi software engineer masa depan dengan keterampilan coding praktis, interaktif, dan teruji skala produksi.",
-    description: "COMMANDEV Academy didirikan dengan satu misi utama: menutup celah antara pendidikan akademis dengan realitas industri rekayasa perangkat lunak modern. Kami berfokus 100% pada demonstrable skills, running code mastery, dan proyek portofolio nyata yang dievaluasi secara otomatis dan akurat oleh mesin penilai cerdas kami.",
+    role: "Interactive Developer Learning Platform",
+    shortBio: "COMMANDEV adalah Interactive Developer Learning Platform yang membantu learner belajar programming dan software engineering secara interaktif, praktis, dan mendalam \u2014 dari memahami konsep hingga mampu membangun software nyata.",
+    description: "COMMANDEV adalah Interactive Developer Learning Platform yang dirancang untuk membantu siapa pun membangun kemampuan programming dan software engineering secara bertahap, praktis, dan mendalam.\n\nKami percaya bahwa belajar coding bukan hanya tentang menghafal syntax. Learner perlu memahami bagaimana sebuah teknologi bekerja, bagaimana menyelesaikan masalah, bagaimana membaca dan memperbaiki error, serta bagaimana menerapkan pengetahuan tersebut untuk membangun software yang nyata.\n\nKarena itu, pengalaman belajar di COMMANDEV menggabungkan materi pembelajaran, contoh kode, latihan interaktif, challenge, quiz, project, dan simulasi dalam satu alur pembelajaran yang terstruktur.\n\nKurikulum COMMANDEV terdiri dari 24 course yang membawa learner dari fundamental programming hingga advanced software engineering. Materinya mencakup programming, web development, frontend, backend, database, cybersecurity, DevSecOps, reliability, game development, robotics, AI & machine learning, cloud & DevOps, hingga software architecture dan system design.\n\nKami memilih untuk tidak terus menambah jumlah course. Sebaliknya, Course 1\u201324 menjadi fondasi kurikulum COMMANDEV yang terus diperdalam dan dikembangkan kualitas materinya.\n\nSetiap course dapat terus diperkuat dengan penjelasan yang lebih mendalam, contoh yang lebih relevan, latihan problem solving, debugging, challenge, project, studi kasus, testing, security, performance, deployment, dan penerapan engineering yang lebih realistis.\n\nTujuan kami sederhana: membantu learner bergerak dari sekadar mengetahui bagaimana kode ditulis menjadi memahami mengapa kode tersebut bekerja, bagaimana menggunakannya untuk menyelesaikan masalah, dan bagaimana membangun software dengan cara berpikir seorang developer.\n\nLearn. Code. Build.",
     photoUrl: "",
     status: "published",
     socialLinks: {
@@ -31192,8 +31215,8 @@ async function startServer() {
         }
       });
     } catch (err) {
-      console.error("Error fetching public About Us:", err);
-      res.status(500).json({ error: "Gagal memuat profil About Us" });
+      console.warn("Error fetching public About Us, falling back to defaults:", err);
+      res.json(DEFAULT_ABOUT_US);
     }
   });
   app.get("/api/admin/about", authenticateFirebaseUser, requireAdmin, async (req, res) => {

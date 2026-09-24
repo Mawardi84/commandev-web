@@ -25,9 +25,36 @@ import {
   RetentionMetricDTO
 } from './src/types/analytics';
 
-// Initialize Firebase Admin
-admin.initializeApp();
-const adminDb = getFirestore();
+import fs from 'fs';
+
+// Load Firestore Config dynamically from firebase-applet-config.json
+let databaseId: string | undefined = undefined;
+let projectId: string | undefined = undefined;
+try {
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    databaseId = config.firestoreDatabaseId;
+    projectId = config.projectId;
+    if (databaseId) {
+      console.log(`[Firebase Admin] Initializing Firestore with custom database ID: ${databaseId}`);
+    }
+    if (projectId) {
+      console.log(`[Firebase Admin] Using explicit Project ID: ${projectId}`);
+    }
+  }
+} catch (err) {
+  console.error('Error loading firebase-applet-config.json for Admin Firestore:', err);
+}
+
+// Initialize Firebase Admin with correct configuration
+if (projectId) {
+  admin.initializeApp({ projectId });
+} else {
+  admin.initializeApp();
+}
+
+const adminDb = databaseId ? getFirestore(databaseId) : getFirestore();
 const adminAuth = getAuth();
 
 // Extend Request type
@@ -3791,9 +3818,9 @@ async function startServer() {
 
   const DEFAULT_ABOUT_US = {
     name: "COMMANDEV Team",
-    role: "Pendidik Arsitektur Perangkat Lunak",
-    shortBio: "Membangun generasi software engineer masa depan dengan keterampilan coding praktis, interaktif, dan teruji skala produksi.",
-    description: "COMMANDEV Academy didirikan dengan satu misi utama: menutup celah antara pendidikan akademis dengan realitas industri rekayasa perangkat lunak modern. Kami berfokus 100% pada demonstrable skills, running code mastery, dan proyek portofolio nyata yang dievaluasi secara otomatis dan akurat oleh mesin penilai cerdas kami.",
+    role: "Interactive Developer Learning Platform",
+    shortBio: "COMMANDEV adalah Interactive Developer Learning Platform yang membantu learner belajar programming dan software engineering secara interaktif, praktis, dan mendalam — dari memahami konsep hingga mampu membangun software nyata.",
+    description: "COMMANDEV adalah Interactive Developer Learning Platform yang dirancang untuk membantu siapa pun membangun kemampuan programming dan software engineering secara bertahap, praktis, dan mendalam.\n\nKami percaya bahwa belajar coding bukan hanya tentang menghafal syntax. Learner perlu memahami bagaimana sebuah teknologi bekerja, bagaimana menyelesaikan masalah, bagaimana membaca dan memperbaiki error, serta bagaimana menerapkan pengetahuan tersebut untuk membangun software yang nyata.\n\nKarena itu, pengalaman belajar di COMMANDEV menggabungkan materi pembelajaran, contoh kode, latihan interaktif, challenge, quiz, project, dan simulasi dalam satu alur pembelajaran yang terstruktur.\n\nKurikulum COMMANDEV terdiri dari 24 course yang membawa learner dari fundamental programming hingga advanced software engineering. Materinya mencakup programming, web development, frontend, backend, database, cybersecurity, DevSecOps, reliability, game development, robotics, AI & machine learning, cloud & DevOps, hingga software architecture dan system design.\n\nKami memilih untuk tidak terus menambah jumlah course. Sebaliknya, Course 1–24 menjadi fondasi kurikulum COMMANDEV yang terus diperdalam dan dikembangkan kualitas materinya.\n\nSetiap course dapat terus diperkuat dengan penjelasan yang lebih mendalam, contoh yang lebih relevan, latihan problem solving, debugging, challenge, project, studi kasus, testing, security, performance, deployment, dan penerapan engineering yang lebih realistis.\n\nTujuan kami sederhana: membantu learner bergerak dari sekadar mengetahui bagaimana kode ditulis menjadi memahami mengapa kode tersebut bekerja, bagaimana menggunakannya untuk menyelesaikan masalah, dan bagaimana membangun software dengan cara berpikir seorang developer.\n\nLearn. Code. Build.",
     photoUrl: "",
     status: "published",
     socialLinks: {
@@ -3836,8 +3863,8 @@ async function startServer() {
         }
       });
     } catch (err: any) {
-      console.error('Error fetching public About Us:', err);
-      res.status(500).json({ error: 'Gagal memuat profil About Us' });
+      console.warn('Error fetching public About Us, falling back to defaults:', err);
+      res.json(DEFAULT_ABOUT_US);
     }
   });
 

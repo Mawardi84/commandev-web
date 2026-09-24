@@ -323,6 +323,17 @@ export const CodingAcademyLanding: React.FC<CodingAcademyLandingProps> = ({ onSt
               <User className="w-4 h-4 group-hover:scale-110 transition-transform" />
             </button>
 
+            {/* Mobile Hamburger Toggle Button */}
+            <button
+              onClick={() => setMobileMenuOpen(prev => !prev)}
+              aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-nav-menu"
+              aria-label={mobileMenuOpen ? (lang === 'id' ? "Tutup menu navigasi" : "Close navigation menu") : (lang === 'id' ? "Buka menu navigasi" : "Open navigation menu")}
+              className="md:hidden p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+
             {/* Language Selector (Far Right) */}
             <div className="flex items-center bg-slate-900/90 border border-slate-800 rounded-xl p-1 shadow-inner">
               <button
@@ -340,17 +351,6 @@ export const CodingAcademyLanding: React.FC<CodingAcademyLandingProps> = ({ onSt
                 <span>🇬🇧</span> EN
               </button>
             </div>
-
-            {/* Mobile Hamburger Toggle Button */}
-            <button
-              onClick={() => setMobileMenuOpen(prev => !prev)}
-              aria-expanded={mobileMenuOpen}
-              aria-controls="mobile-nav-menu"
-              aria-label={mobileMenuOpen ? (lang === 'id' ? "Tutup menu navigasi" : "Close navigation menu") : (lang === 'id' ? "Buka menu navigasi" : "Open navigation menu")}
-              className="md:hidden p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-            >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
           </div>
         </div>
 
