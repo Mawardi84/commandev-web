@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserProgress, Course } from '../types';
+import { COURSES } from '../data/curriculum';
 import { 
   User, 
   Trophy, 
@@ -103,16 +104,47 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     window.open(url, '_blank');
   };
 
-  // Skill tracks mapping
+  // Dynamic skill progress calculator based on real completed lessons and course curriculum
+  const calculateTrackProgress = (courseId: string): number => {
+    // 1. Check if explicitly in userProgress.courseProgress
+    if (userProgress.courseProgress && typeof userProgress.courseProgress[courseId] === 'number') {
+      return Math.min(100, Math.max(0, userProgress.courseProgress[courseId]));
+    }
+
+    // 2. Compute dynamically from lessons in courses / COURSES
+    const allCoursesList = courses && courses.length > 0 ? courses : COURSES;
+    const targetCourse = allCoursesList.find(c => c.id === courseId);
+
+    if (!targetCourse) return 0;
+
+    let totalLessonsCount = 0;
+    let completedLessonsCount = 0;
+
+    for (const level of targetCourse.levels || []) {
+      for (const module of level.modules || []) {
+        for (const lesson of module.lessons || []) {
+          totalLessonsCount++;
+          if (userProgress.completedLessons.includes(lesson.id)) {
+            completedLessonsCount++;
+          }
+        }
+      }
+    }
+
+    if (totalLessonsCount === 0) return 0;
+    return Math.min(100, Math.round((completedLessonsCount / totalLessonsCount) * 100));
+  };
+
+  // Skill tracks mapping with real dynamic progress calculation
   const skillTracks = [
-    { name: 'HTML5 Semantic', icon: FileCode, color: 'text-orange-400', progress: Math.min(100, (totalCompleted / 10) * 100) },
-    { name: 'CSS3 & Flex/Grid', icon: Code2, color: 'text-blue-400', progress: 35 },
-    { name: 'JavaScript ES6+', icon: Cpu, color: 'text-amber-400', progress: 40 },
-    { name: 'Python 3.12', icon: Terminal, color: 'text-emerald-400', progress: 50 },
-    { name: 'Git & GitHub', icon: GitBranch, color: 'text-rose-400', progress: 20 },
-    { name: 'React Architecture', icon: Layers, color: 'text-cyan-400', progress: 25 },
-    { name: 'Backend & REST API', icon: Server, color: 'text-indigo-400', progress: 15 },
-    { name: 'Database & SQL', icon: Database, color: 'text-violet-400', progress: 20 },
+    { name: 'HTML5 Semantic', icon: FileCode, color: 'text-orange-400', progress: calculateTrackProgress('html-mastery') },
+    { name: 'CSS3 & Flex/Grid', icon: Code2, color: 'text-blue-400', progress: calculateTrackProgress('css-mastery') },
+    { name: 'JavaScript ES6+', icon: Cpu, color: 'text-amber-400', progress: calculateTrackProgress('js-mastery') },
+    { name: 'Python 3.12', icon: Terminal, color: 'text-emerald-400', progress: calculateTrackProgress('python-mastery') },
+    { name: 'Git & GitHub', icon: GitBranch, color: 'text-rose-400', progress: calculateTrackProgress('git-github') },
+    { name: 'React Architecture', icon: Layers, color: 'text-cyan-400', progress: calculateTrackProgress('react-mastery') },
+    { name: 'Backend & REST API', icon: Server, color: 'text-indigo-400', progress: calculateTrackProgress('backend-mastery') },
+    { name: 'Database & SQL', icon: Database, color: 'text-violet-400', progress: calculateTrackProgress('database-mastery') || calculateTrackProgress('mysql-mastery') },
   ];
 
   return (
@@ -427,31 +459,79 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {/* Badges / Achievements Milestone */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8">
-        <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-          <Trophy className="w-5 h-5 text-amber-400" />
-          <span>Pencapaian & Milestone</span>
+        <h2 className="text-lg font-bold mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-amber-400" />
+            <span>Pencapaian & Milestone</span>
+          </div>
+          <span className="text-xs text-slate-400 font-normal">
+            {[totalCompleted > 0, totalCompleted >= 3 || userProgress.xp >= 100, userProgress.streak >= 1, (userProgress.completedProjects || []).length > 0].filter(Boolean).length} dari 4 Terbuka
+          </span>
         </h2>
         
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-center space-y-1">
+          {/* Badge 1 */}
+          <div className={`p-4 rounded-2xl border text-center space-y-1.5 transition-all ${
+            totalCompleted > 0 
+              ? 'bg-amber-500/10 border-amber-500/30 text-white shadow-lg shadow-amber-500/5' 
+              : 'bg-slate-950/40 border-slate-800/80 text-slate-500 opacity-60'
+          }`}>
             <div className="text-2xl">🌱</div>
-            <div className="font-bold text-xs">First Step</div>
-            <div className="text-[10px] text-slate-400">Menyelesaikan materi pertama</div>
+            <div className="font-bold text-xs flex items-center justify-center gap-1">
+              <span>First Step</span>
+              {totalCompleted > 0 && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+            </div>
+            <div className="text-[10px] text-slate-400">
+              {totalCompleted > 0 ? 'Terbuka (Materi Selesai)' : 'Selesaikan 1 materi untuk membuka'}
+            </div>
           </div>
-          <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-center space-y-1">
+
+          {/* Badge 2 */}
+          <div className={`p-4 rounded-2xl border text-center space-y-1.5 transition-all ${
+            totalCompleted >= 3 || userProgress.xp >= 100
+              ? 'bg-indigo-500/10 border-indigo-500/30 text-white shadow-lg shadow-indigo-500/5' 
+              : 'bg-slate-950/40 border-slate-800/80 text-slate-500 opacity-60'
+          }`}>
             <div className="text-2xl">⚡</div>
-            <div className="font-bold text-xs">Bug Hunter</div>
-            <div className="text-[10px] text-slate-400">Memperbaiki error di sesi latihan</div>
+            <div className="font-bold text-xs flex items-center justify-center gap-1">
+              <span>Bug Hunter</span>
+              {(totalCompleted >= 3 || userProgress.xp >= 100) && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+            </div>
+            <div className="text-[10px] text-slate-400">
+              {totalCompleted >= 3 || userProgress.xp >= 100 ? 'Terbuka (3 Latihan / 100 XP)' : 'Raih 100 XP untuk membuka'}
+            </div>
           </div>
-          <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-center space-y-1">
+
+          {/* Badge 3 */}
+          <div className={`p-4 rounded-2xl border text-center space-y-1.5 transition-all ${
+            userProgress.streak >= 1
+              ? 'bg-orange-500/10 border-orange-500/30 text-white shadow-lg shadow-orange-500/5' 
+              : 'bg-slate-950/40 border-slate-800/80 text-slate-500 opacity-60'
+          }`}>
             <div className="text-2xl">🔥</div>
-            <div className="font-bold text-xs">On Fire</div>
-            <div className="text-[10px] text-slate-400">Menjaga streak belajar aktif</div>
+            <div className="font-bold text-xs flex items-center justify-center gap-1">
+              <span>On Fire</span>
+              {userProgress.streak >= 1 && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+            </div>
+            <div className="text-[10px] text-slate-400">
+              {userProgress.streak >= 1 ? `Terbuka (${userProgress.streak} Hari Streak)` : 'Jaga streak 1 hari untuk membuka'}
+            </div>
           </div>
-          <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-center space-y-1">
+
+          {/* Badge 4 */}
+          <div className={`p-4 rounded-2xl border text-center space-y-1.5 transition-all ${
+            (userProgress.completedProjects || []).length > 0
+              ? 'bg-purple-500/10 border-purple-500/30 text-white shadow-lg shadow-purple-500/5' 
+              : 'bg-slate-950/40 border-slate-800/80 text-slate-500 opacity-60'
+          }`}>
             <div className="text-2xl">🚀</div>
-            <div className="font-bold text-xs">Project Master</div>
-            <div className="text-[10px] text-slate-400">Menyelesaikan proyek portofolio</div>
+            <div className="font-bold text-xs flex items-center justify-center gap-1">
+              <span>Project Master</span>
+              {(userProgress.completedProjects || []).length > 0 && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+            </div>
+            <div className="text-[10px] text-slate-400">
+              {(userProgress.completedProjects || []).length > 0 ? 'Terbuka (Proyek Selesai)' : 'Selesaikan 1 proyek portofolio'}
+            </div>
           </div>
         </div>
       </div>
