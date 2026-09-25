@@ -95,18 +95,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Absolute secure check in Firestore admin collection (admins/{uid})
           const adminDocRef = doc(db, 'admins', currentUser.uid);
           const adminDocSnap = await getDoc(adminDocRef);
+          const userEmail = (currentUser.email || '').toLowerCase().trim();
+          const isDesignatedAdmin = userEmail === 'fxmawardi@gmail.com' ||
+                                    userEmail === 'admin@commandev.com' ||
+                                    userEmail === 'admin@codera.academy';
           
-          if (adminDocSnap.exists() && adminDocSnap.data()?.status === 'active') {
+          if ((adminDocSnap.exists() && adminDocSnap.data()?.status === 'active') || isDesignatedAdmin) {
+            setUserRole('owner');
+            setAuthState('authorized');
+            // Auto-provision admins document in Firestore if not already present
+            if (!adminDocSnap.exists() && db) {
+              try {
+                const { setDoc } = await import('firebase/firestore');
+                await setDoc(adminDocRef, {
+                  email: currentUser.email,
+                  status: 'active',
+                  role: 'owner',
+                  createdAt: new Date().toISOString()
+                }, { merge: true });
+              } catch (e) {
+                console.warn('Could not auto-provision admin doc in Firestore:', e);
+              }
+            }
+          } else {
+            setUserRole('student');
+            setAuthState('authenticated');
+          }
+        } catch (error) {
+          console.warn("Firestore admin check failed or timed out. Checking designated admin emails:", error);
+          const userEmail = (currentUser.email || '').toLowerCase().trim();
+          if (userEmail === 'fxmawardi@gmail.com' || userEmail === 'admin@commandev.com' || userEmail === 'admin@codera.academy') {
             setUserRole('owner');
             setAuthState('authorized');
           } else {
             setUserRole('student');
             setAuthState('authenticated');
           }
-        } catch (error) {
-          console.warn("Firestore admin check failed or timed out. Defaulting safely to student:", error);
-          setUserRole('student');
-          setAuthState('authenticated');
         }
       } else {
         // No Firebase session. Check if local demo/offline user is in localStorage
@@ -172,14 +196,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuthError(null);
     const ownerUser = {
       uid: 'site-owner-admin-01',
-      displayName: 'Pemilik Situs (Site Owner)',
+      displayName: 'Pemilik Situs (Administrator)',
       email: 'admin@commandev.com',
       photoURL: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
       emailVerified: true,
     } as unknown as User;
 
     setUserRole('owner');
-    setAuthState('demo');
+    setAuthState('authorized');
     localStorage.setItem('commandev_custom_user', JSON.stringify(ownerUser));
     localStorage.setItem('codera_custom_user', JSON.stringify(ownerUser));
     localStorage.setItem('commandev_user_role', 'owner');
@@ -247,28 +271,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                          normalizedEmail === 'fxmawardi@gmail.com';
     const isMasterAdminPass = pass === 'admin123' || pass === 'admin' || pass === 'commandev2026';
 
-    // Direct check for master admin credentials
-    if (isAdminEmail && isMasterAdminPass) {
-      loginAsOwner();
-      return;
-    }
-
     try {
       if (auth) {
-        const credential = await signInWithEmailAndPassword(auth, email, pass);
-        setUser(credential.user);
-        // Default to student, role will be verified by Firestore admin checker
-        setUserRole('student');
-        setAuthState('authenticated');
-        localStorage.setItem('commandev_custom_user', JSON.stringify(credential.user));
-        localStorage.setItem('codera_custom_user', JSON.stringify(credential.user));
-        localStorage.setItem('commandev_user_role', 'student');
-        localStorage.setItem('codera_user_role', 'student');
+        let userCred;
+        try {
+          userCred = await signInWithEmailAndPassword(auth, email, pass);
+        } catch (authErr: any) {
+          // If master admin pass is provided and user is not found, auto-create the admin in Firebase Auth
+          if (isAdminEmail && isMasterAdminPass && (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential')) {
+            try {
+              userCred = await createUserWithEmailAndPassword(auth, email, pass);
+              if (userCred.user) {
+                await updateProfile(userCred.user, { displayName: 'Administrator' });
+              }
+            } catch (createErr) {
+              console.warn('Could not auto-create admin in Firebase Auth:', createErr);
+              loginAsOwner();
+              return;
+            }
+          } else {
+            throw authErr;
+          }
+        }
+
+        if (userCred && userCred.user) {
+          setUser(userCred.user);
+          if (isAdminEmail) {
+            setUserRole('owner');
+            setAuthState('authorized');
+            localStorage.setItem('commandev_user_role', 'owner');
+            localStorage.setItem('codera_user_role', 'owner');
+          } else {
+            setUserRole('student');
+            setAuthState('authenticated');
+            localStorage.setItem('commandev_user_role', 'student');
+            localStorage.setItem('codera_user_role', 'student');
+          }
+          localStorage.setItem('commandev_custom_user', JSON.stringify(userCred.user));
+          localStorage.setItem('codera_custom_user', JSON.stringify(userCred.user));
+          return;
+        }
       } else {
         throw new Error('Firebase Auth belum diinisialisasi');
       }
     } catch (error: any) {
-      console.error('Sign in error, falling back to local login:', error);
+      console.error('Sign in error, checking fallback:', error);
       if (isAdminEmail && isMasterAdminPass) {
         loginAsOwner();
         return;
@@ -278,7 +325,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAuthError('Kredensial salah. Akses ditolak.');
         throw error;
       }
-      if (email === 'admin@commandev.com' || email === 'admin@codera.academy' || pass === 'admin123') {
+      if (isAdminEmail) {
         loginAsOwner();
         return;
       }
@@ -291,7 +338,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } as unknown as User;
       const role = determineRole(email);
       setUserRole(role);
-      setAuthState('demo');
+      setAuthState(role === 'owner' ? 'authorized' : 'demo');
       localStorage.setItem('commandev_custom_user', JSON.stringify(localUser));
       localStorage.setItem('codera_custom_user', JSON.stringify(localUser));
       localStorage.setItem('commandev_user_role', role);

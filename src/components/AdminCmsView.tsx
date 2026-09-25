@@ -89,12 +89,8 @@ export const AdminCmsView: React.FC<{ onTryChallenge?: (challenge: CustomChallen
 
   useEffect(() => {
     getCustomChallengesFromDb().then(dbChallenges => {
-      if (dbChallenges.length > 0) {
-        setChallenges(prev => {
-          const ids = new Set(prev.map(p => p.id));
-          const newItems = dbChallenges.filter(d => !ids.has(d.id));
-          return [...prev, ...newItems];
-        });
+      if (dbChallenges && dbChallenges.length > 0) {
+        setChallenges(dbChallenges);
       }
     });
   }, []);

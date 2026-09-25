@@ -338,8 +338,13 @@ export default function App() {
     if (appState === 'app' && !user) {
       setAppState('landing');
       setShowAuthModal(true);
+    } else if (appState === 'admin-dashboard' && userRole !== 'owner') {
+      setAppState('admin-login');
+      if (window.location.pathname !== '/admin/login' && window.location.hash !== '#admin/login') {
+        window.history.replaceState(null, '', '/admin/login');
+      }
     }
-  }, [appState, user]);
+  }, [appState, user, userRole]);
 
   const handleStartLearning = () => {
     if (user) {
@@ -660,8 +665,8 @@ export default function App() {
               }}
               onLogout={() => {
                 logout();
-                window.history.pushState({}, '', '/');
-                setAppState('landing');
+                window.history.pushState({}, '', '/admin/login');
+                setAppState('admin-login');
               }}
             />
           </motion.div>

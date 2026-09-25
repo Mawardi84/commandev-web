@@ -124,13 +124,6 @@ export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: Admi
         </div>
       </header>
 
-      {authState === 'demo' && (
-        <div className="bg-amber-600/10 border-b border-amber-600/20 px-4 py-2 text-center text-xs text-amber-300 font-bold flex items-center justify-center gap-2">
-          <span>⚠️</span>
-          <span><strong>MODE PREVIEW (DEMO)</strong> — Anda menjelajahi CMS dalam mode tamu offline. Penyimpanan server Firestore dinonaktifkan.</span>
-        </div>
-      )}
-
       {/* Main Admin Container */}
       <div className="flex-1 flex flex-col md:flex-row">
         {/* Admin Sidebar */}

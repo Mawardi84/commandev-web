@@ -55,7 +55,10 @@ export function AboutUsView({ onBack }: AboutUsViewProps) {
         <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center space-y-6">
           <h2 className="text-xl font-black text-white tracking-tight">Gagal Memuat</h2>
           <p className="text-sm text-slate-400">{error}</p>
-          <button onClick={onBack} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer">Kembali</button>
+          <div className="flex gap-3 justify-center">
+            <button onClick={() => window.location.reload()} className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer">Coba Lagi</button>
+            <button onClick={onBack} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer">Kembali</button>
+          </div>
         </div>
       </div>
     );

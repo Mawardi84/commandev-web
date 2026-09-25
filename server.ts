@@ -106,8 +106,13 @@ const requireAdmin = async (req: express.Request, res: express.Response, next: e
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // Check for custom claim first
-  if (req.user.admin === true) {
+  // Check for custom claim or designated admin emails
+  const userEmail = (req.user.email || '').toLowerCase().trim();
+  const isDesignatedAdmin = userEmail === 'fxmawardi@gmail.com' || 
+                            userEmail === 'admin@commandev.com' || 
+                            userEmail === 'admin@codera.academy';
+
+  if (req.user.admin === true || isDesignatedAdmin) {
     return next();
   }
 

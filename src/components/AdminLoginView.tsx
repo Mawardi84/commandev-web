@@ -53,7 +53,6 @@ export function AdminLoginView({ onBackToHome, onLoginSuccess }: AdminLoginViewP
             </div>
             <h1 className="text-2xl font-black tracking-tight text-white">COMMANDEV Administration</h1>
             <p className="text-xs font-medium uppercase tracking-wider text-amber-400">Admin Sign In</p>
-            <p className="text-xs text-slate-400 mt-1">Masuk ke dashboard administrasi COMMANDEV.</p>
           </div>
 
           {authError && (
@@ -101,27 +100,6 @@ export function AdminLoginView({ onBackToHome, onLoginSuccess }: AdminLoginViewP
               {submitting ? 'Memproses...' : 'Sign In'}
             </button>
           </form>
-
-          <div className="pt-4 border-t border-slate-800 space-y-2 text-center">
-            <div className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl text-left space-y-1">
-              <p className="text-[11px] font-semibold text-amber-400">Default Kredensial Administrator:</p>
-              <p className="text-[11px] text-slate-300 font-mono">Email: <span className="text-white">admin@commandev.com</span> (atau <span className="text-white">fxmawardi@gmail.com</span>)</p>
-              <p className="text-[11px] text-slate-300 font-mono">Password: <span className="text-white">admin123</span></p>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('admin@commandev.com');
-                  setPassword('admin123');
-                }}
-                className="mt-1 text-[10px] text-amber-400 hover:text-amber-300 underline font-medium cursor-pointer"
-              >
-                Isi Otomatis Kredensial Admin
-              </button>
-            </div>
-            <span className="text-[11px] text-slate-500 block">
-              Area terbatas khusus pengelola kurikulum dan sistem COMMANDEV.
-            </span>
-          </div>
         </motion.div>
       </div>
     </div>
