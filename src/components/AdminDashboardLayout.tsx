@@ -177,7 +177,7 @@ export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: Admi
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 font-black text-amber-400">
             <ShieldCheck className="w-4 h-4" />
-            <span>COMMANDEV v2.5 Admin CMS</span>
+            <span>COMMANDEV Control Center</span>
           </div>
           <div className="h-4 w-[1px] bg-slate-800 hidden sm:block"></div>
           <a
@@ -296,7 +296,7 @@ export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: Admi
             <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
               <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Commadev Control Center</span>
+                <span>COMMANDEV Control Center</span>
               </div>
             </div>
           </div>
@@ -352,7 +352,7 @@ export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: Admi
               <div className="grid sm:grid-cols-3 gap-4">
                 <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>Pengguna & Sesi Aktif</span>
+                    <span>Total Siswa Aktif & Pengguna</span>
                     <Users className="w-4 h-4 text-emerald-400" />
                   </div>
                   <div className="text-3xl font-black text-white">
@@ -370,7 +370,7 @@ export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: Admi
 
                 <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>Modul & Materi Kurikulum</span>
+                    <span>Modul Tantangan & Kurikulum</span>
                     <BookOpen className="w-4 h-4 text-amber-400" />
                   </div>
                   <div className="text-3xl font-black text-amber-400">
@@ -387,7 +387,7 @@ export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: Admi
 
                 <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>Tingkat Kelulusan & Penyelesaian</span>
+                    <span>Tingkat Penyelesaian & Kelulusan</span>
                     <CheckCircle2 className="w-4 h-4 text-indigo-400" />
                   </div>
                   <div className="text-3xl font-black text-indigo-400">
@@ -504,7 +504,7 @@ export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: Admi
                   <div className="text-2xl font-black text-white">
                     {loadingOverview ? '...' : overviewStats.uniqueUsers.toLocaleString('id-ID')}
                   </div>
-                  <div className="text-[11px] text-emerald-400 font-semibold">Tersinkronisasi ke Firestore</div>
+                  <div className="text-[11px] text-emerald-400 font-semibold">Tersinkronisasi ke Firebase Firestore</div>
                 </div>
                 <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1.5">
                   <div className="text-xs text-slate-400">Sesi Aktif Hari Ini</div>

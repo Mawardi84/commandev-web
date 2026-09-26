@@ -107,24 +107,31 @@ const requireAdmin = async (req: express.Request, res: express.Response, next: e
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // Check for custom claim or designated admin emails
-  const userEmail = (req.user.email || '').toLowerCase().trim();
-  const isDesignatedAdmin = userEmail === 'fxmawardi@gmail.com' || 
-                            userEmail === 'admin@commandev.com' || 
-                            userEmail === 'admin@codera.academy';
-
-  if (req.user.admin === true || isDesignatedAdmin) {
+  // 1. Check custom claim first
+  if (req.user.admin === true) {
     return next();
   }
 
-  // Fallback to checking Firestore admins collection for dual compatibility with firestore.rules
+  // 2. Check Firestore admins collection (/admins/{uid})
   try {
     const adminDoc = await adminDb.collection('admins').doc(req.user.uid).get();
-    if (adminDoc.exists) {
+    if (adminDoc.exists && adminDoc.data()?.status === 'active') {
+      return next();
+    }
+
+    // Auto-provision initial owner email to Firestore admins collection if verified
+    const userEmail = (req.user.email || '').toLowerCase().trim();
+    if (userEmail === 'fxmawardi@gmail.com' || userEmail === 'admin@commandev.com' || userEmail === 'admin@codera.academy') {
+      await adminDb.collection('admins').doc(req.user.uid).set({
+        email: req.user.email,
+        status: 'active',
+        role: 'owner',
+        createdAt: new Date().toISOString()
+      }, { merge: true });
       return next();
     }
   } catch (e) {
-    console.error('Error verifying admin document:', e);
+    console.error('Error verifying admin document in Firestore:', e);
   }
 
   return res.status(403).json({ error: 'Forbidden' });
@@ -4706,6 +4713,11 @@ Berikan output JSON yang valid murni (tanpa pembungkus markdown apapun, langsung
       console.error('Error in Voice TTS:', error);
       res.status(500).json({ error: error.message || 'Error generating TTS audio' });
     }
+  });
+
+  // Explicit 404 JSON handler for unhandled /api/* routes (prevents returning HTML doctype to API callers)
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: `API endpoint ${req.method} ${req.path} not found` });
   });
 
   // Vite middleware for development
