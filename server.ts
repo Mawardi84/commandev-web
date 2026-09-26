@@ -48,15 +48,54 @@ try {
   console.error('Error loading firebase-applet-config.json for Admin Firestore:', err);
 }
 
-// Initialize Firebase Admin with correct configuration
-if (projectId) {
-  admin.initializeApp({ projectId });
-} else {
-  admin.initializeApp();
+// Helper to lazily initialize Firebase Admin on demand to prevent module evaluation crashes on Vercel
+function ensureFirebaseInitialized() {
+  if (admin.getApps().length === 0) {
+    try {
+      if (projectId) {
+        admin.initializeApp({ projectId });
+      } else {
+        admin.initializeApp();
+      }
+    } catch (err) {
+      console.error("[Firebase Admin] Lazy initialization failed during request:", err);
+    }
+  }
 }
 
-const adminDb = databaseId ? getFirestore(databaseId) : getFirestore();
-const adminAuth = getAuth();
+let _adminDb: any = null;
+const adminDb = new Proxy({}, {
+  get(target, prop) {
+    ensureFirebaseInitialized();
+    if (!_adminDb) {
+      try {
+        _adminDb = databaseId ? getFirestore(databaseId) : getFirestore();
+      } catch (err) {
+        console.error("Failed to initialize Firestore adminDb lazily:", err);
+        throw new Error("Database initialization failed. Please check Firebase credentials.");
+      }
+    }
+    const val = Reflect.get(_adminDb, prop);
+    return typeof val === 'function' ? val.bind(_adminDb) : val;
+  }
+}) as unknown as ReturnType<typeof getFirestore>;
+
+let _adminAuth: any = null;
+const adminAuth = new Proxy({}, {
+  get(target, prop) {
+    ensureFirebaseInitialized();
+    if (!_adminAuth) {
+      try {
+        _adminAuth = getAuth();
+      } catch (err) {
+        console.error("Failed to initialize Firebase Auth adminAuth lazily:", err);
+        throw new Error("Firebase Auth initialization failed. Please check Firebase credentials.");
+      }
+    }
+    const val = Reflect.get(_adminAuth, prop);
+    return typeof val === 'function' ? val.bind(_adminAuth) : val;
+  }
+}) as unknown as ReturnType<typeof getAuth>;
 
 // Extend Request type
 declare global {
@@ -4720,8 +4759,8 @@ Berikan output JSON yang valid murni (tanpa pembungkus markdown apapun, langsung
     res.status(404).json({ error: `API endpoint ${req.method} ${req.path} not found` });
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  // Vite middleware for development (bypassed entirely in Vercel serverless environments to prevent binary failures)
+  if (process.env.NODE_ENV !== "production" && process.env.VERCEL !== "1") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
