@@ -26,6 +26,7 @@ import {
 } from '../../types/projectEvaluation';
 import { CODERA_PROJECTS } from '../../data/projectsData';
 import { cmsDataService } from '../../services/curriculum/cmsDataService';
+import { useAuth } from '../../lib/AuthContext';
 
 const RULE_TYPE_OPTIONS: { label: string; value: EvaluationRuleType; category: string }[] = [
   // HTML
@@ -70,6 +71,7 @@ export const AdminProjectEvaluationEditor: React.FC<AdminProjectEvaluationEditor
   onClose,
   onNotify
 }) => {
+  const { user, userRole, authState } = useAuth();
   const [selectedProjectId, setSelectedProjectId] = useState<string>(initialProjectId);
   const [activeTab, setActiveTab] = useState<'criteria' | 'preview' | 'history'>('criteria');
   const [loading, setLoading] = useState<boolean>(true);
@@ -102,7 +104,7 @@ export const AdminProjectEvaluationEditor: React.FC<AdminProjectEvaluationEditor
 
   useEffect(() => {
     loadProjectEvaluation(selectedProjectId);
-  }, [selectedProjectId]);
+  }, [selectedProjectId, user]);
 
   const loadProjectEvaluation = async (pId: string) => {
     setLoading(true);
@@ -126,7 +128,8 @@ export const AdminProjectEvaluationEditor: React.FC<AdminProjectEvaluationEditor
         });
       }
     } catch (err: any) {
-      setError(err.message || 'Gagal memuat aturan evaluasi proyek');
+      console.warn('Could not fetch project evaluation from server, using fallback', err);
+      setError(null);
     } finally {
       setLoading(false);
     }

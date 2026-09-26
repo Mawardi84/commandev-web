@@ -180,13 +180,15 @@ export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: Admi
             <span>COMMANDEV v2.5 Admin CMS</span>
           </div>
           <div className="h-4 w-[1px] bg-slate-800 hidden sm:block"></div>
-          <button
-            onClick={onViewSite}
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
             className="hidden sm:inline-flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span>Kunjungi Situs (View Site)</span>
-          </button>
+          </a>
         </div>
 
         <div className="flex items-center gap-3">
@@ -294,11 +296,8 @@ export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: Admi
             <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
               <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>COMMANDEV v2.5 Control Center</span>
+                <span>Commadev Control Center</span>
               </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Alamat terpisah khusus admin (`/admin`) dengan kontrol penuh CMS.
-              </p>
             </div>
           </div>
         </aside>
@@ -485,12 +484,84 @@ export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: Admi
 
           {adminTab === 'users' && (
             <div className="space-y-6 max-w-4xl">
-              <div>
-                <h1 className="text-2xl font-black text-white">Data Pengguna & Siswa</h1>
-                <p className="text-xs text-slate-400">Daftar siswa yang terdaftar di COMMANDEV.</p>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h1 className="text-2xl font-black text-white">Data Pengguna & Siswa</h1>
+                  <p className="text-xs text-slate-400">Ringkasan hak akses pengguna, status sesi, dan administrasi COMMANDEV.</p>
+                </div>
+                <button
+                  onClick={() => setAdminTab('analytics')}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-lg shadow-amber-600/20 transition-all cursor-pointer"
+                >
+                  <BarChart3 className="w-4 h-4" />
+                  <span>Lihat Aktivitas Pengguna di CMS Analytics</span>
+                </button>
               </div>
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-400 text-xs">
-                Sistem database siswa aktif dan terenkripsi menggunakan Firebase Firestore.
+
+              <div className="grid sm:grid-cols-3 gap-4">
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1.5">
+                  <div className="text-xs text-slate-400">Total Pengguna Terdaftar</div>
+                  <div className="text-2xl font-black text-white">
+                    {loadingOverview ? '...' : overviewStats.uniqueUsers.toLocaleString('id-ID')}
+                  </div>
+                  <div className="text-[11px] text-emerald-400 font-semibold">Tersinkronisasi ke Firestore</div>
+                </div>
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1.5">
+                  <div className="text-xs text-slate-400">Sesi Aktif Hari Ini</div>
+                  <div className="text-2xl font-black text-amber-400">
+                    {loadingOverview ? '...' : overviewStats.dau.toLocaleString('id-ID')}
+                  </div>
+                  <div className="text-[11px] text-slate-400">Pengunjung & Pelajar aktif</div>
+                </div>
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1.5">
+                  <div className="text-xs text-slate-400">Tingkat Keamanan Sesi</div>
+                  <div className="text-2xl font-black text-emerald-400">RBAC Active</div>
+                  <div className="text-[11px] text-emerald-400 font-semibold">Otentikasi Firebase Token</div>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-amber-400" />
+                    <span>Daftar Akun Administrator Berwenang</span>
+                  </h2>
+                  <span className="text-[11px] text-slate-400 font-mono">Role: Owner / Super Admin</span>
+                </div>
+
+                <div className="divide-y divide-slate-800/60">
+                  <div className="py-3 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        <span>fxmawardi@gmail.com</span>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold">Owner</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">Akses Penuh: CMS Kurikulum, Aturan Evaluasi Proyek, Analitik Trafik & Sistem</div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">Aktif</span>
+                  </div>
+
+                  <div className="py-3 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        <span>admin@commandev.com</span>
+                        <span className="px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 text-[10px] font-bold">System Admin</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">Akses Manajemen: Pemeliharaan Sistem dan Kurikulum</div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">Aktif</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 text-slate-400 text-xs space-y-1">
+                <div className="font-bold text-slate-300 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Kebijakan Privasi Siswa & Perlindungan PII</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">
+                  Sesuai standar keamanan sistem COMMANDEV, data privasi siswa (seperti password dan token sesi) tidak pernah disimpan dalam bentuk teks polos. Telemetri analitik bersifat observasional dan tidak menampilkan alamat IP mentah tanpa penyamaran (*masked*).
+                </p>
               </div>
             </div>
           )}
