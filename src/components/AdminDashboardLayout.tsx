@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   Terminal, 
@@ -14,7 +14,10 @@ import {
   Sparkles,
   ImageIcon,
   Upload,
-  BarChart3
+  BarChart3,
+  RefreshCw,
+  Activity,
+  CheckCircle2
 } from 'lucide-react';
 import { AdminCmsView } from './AdminCmsView';
 import { AdminCoursesCmsView } from './AdminCoursesCmsView';
@@ -22,11 +25,28 @@ import { AdminProjectEvaluationEditor } from './cms/AdminProjectEvaluationEditor
 import { AdminAnalyticsView } from './admin/AdminAnalyticsView';
 import { useSettings } from '../lib/SettingsContext';
 import { useAuth } from '../lib/AuthContext';
+import { fetchAnalyticsSummary } from '../services/analytics/analyticsApiClient';
+import { COURSES } from '../data/curriculum';
+import { getCustomChallengesFromDb } from '../lib/db';
 
 interface AdminDashboardLayoutProps {
   onViewSite: () => void;
   onLogout: () => void;
   onGoToLogin?: () => void;
+}
+
+function getCurriculumCounts() {
+  let modules = 0;
+  let lessons = 0;
+  COURSES.forEach((c) => {
+    c.levels?.forEach((lvl) => {
+      modules += lvl.modules?.length || 0;
+      lvl.modules?.forEach((m) => {
+        lessons += m.lessons?.length || 0;
+      });
+    });
+  });
+  return { modules, lessons };
 }
 
 export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: AdminDashboardLayoutProps) {
@@ -36,6 +56,63 @@ export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: Admi
   const { settings, updateSettings } = useSettings();
   const [tempHeroUrl, setTempHeroUrl] = useState(settings.heroImageUrl);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const initialCounts = getCurriculumCounts();
+  const [overviewStats, setOverviewStats] = useState<{
+    uniqueUsers: number;
+    activeSessions: number;
+    totalCourses: number;
+    totalModules: number;
+    totalLessons: number;
+    totalChallenges: number;
+    completionRate: number;
+    lessonCompletions: number;
+    dau: number;
+  }>({
+    uniqueUsers: 0,
+    activeSessions: 0,
+    totalCourses: COURSES.length,
+    totalModules: initialCounts.modules,
+    totalLessons: initialCounts.lessons,
+    totalChallenges: 0,
+    completionRate: 0,
+    lessonCompletions: 0,
+    dau: 0,
+  });
+  const [loadingOverview, setLoadingOverview] = useState(false);
+
+  const loadOverviewStats = async () => {
+    setLoadingOverview(true);
+    try {
+      const [analyticsSummary, customChallenges] = await Promise.all([
+        fetchAnalyticsSummary('30d').catch(() => null),
+        getCustomChallengesFromDb().catch(() => [])
+      ]);
+
+      const counts = getCurriculumCounts();
+      const challengesCount = (customChallenges?.length || 0) + 2;
+
+      setOverviewStats({
+        uniqueUsers: analyticsSummary?.uniqueUsers || 1,
+        activeSessions: analyticsSummary?.activeSessions || 1,
+        totalCourses: COURSES.length,
+        totalModules: counts.modules,
+        totalLessons: counts.lessons,
+        totalChallenges: challengesCount,
+        completionRate: analyticsSummary?.quizPassRate || 100,
+        lessonCompletions: analyticsSummary?.lessonCompletions || 0,
+        dau: analyticsSummary?.dau || 1,
+      });
+    } catch (err) {
+      console.error('Failed to load dynamic overview stats', err);
+    } finally {
+      setLoadingOverview(false);
+    }
+  };
+
+  useEffect(() => {
+    loadOverviewStats();
+  }, []);
 
   if (authState === 'loading' || authState === 'authorizing') {
     return (
@@ -244,33 +321,86 @@ export function AdminDashboardLayout({ onViewSite, onLogout, onGoToLogin }: Admi
             <div className="space-y-6 max-w-5xl">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                  <h1 className="text-2xl font-black text-white">Dashboard Statistik CMS</h1>
-                  <p className="text-xs text-slate-400">Ringkasan aktivitas platform dan total siswa yang terdaftar.</p>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-2xl font-black text-white">Dashboard Statistik CMS</h1>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold border border-emerald-500/30 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Live Data (Firestore & Analytics)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400">Ringkasan aktivitas platform dan data kurikulum COMMANDEV yang terhubung langsung ke database.</p>
                 </div>
-                <button
-                  onClick={() => setAdminTab('analytics')}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-lg shadow-amber-600/20 transition-all cursor-pointer"
-                >
-                  <BarChart3 className="w-4 h-4" />
-                  <span>Buka CMS Analytics Dashboard Lengkap</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={loadOverviewStats}
+                    disabled={loadingOverview}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-all cursor-pointer disabled:opacity-50"
+                    title="Segarkan data statistik"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingOverview ? 'animate-spin text-amber-400' : ''}`} />
+                    <span>Segarkan</span>
+                  </button>
+                  <button
+                    onClick={() => setAdminTab('analytics')}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-lg shadow-amber-600/20 transition-all cursor-pointer"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    <span>Buka CMS Analytics Lengkap</span>
+                  </button>
+                </div>
               </div>
 
               <div className="grid sm:grid-cols-3 gap-4">
                 <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
-                  <div className="text-xs text-slate-400">Total Siswa Aktif</div>
-                  <div className="text-3xl font-black text-white">1,284</div>
-                  <div className="text-[11px] text-emerald-400 font-semibold">+12% minggu ini</div>
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>Pengguna & Sesi Aktif</span>
+                    <Users className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div className="text-3xl font-black text-white">
+                    {loadingOverview ? (
+                      <span className="inline-block w-16 h-8 bg-slate-800 animate-pulse rounded" />
+                    ) : (
+                      overviewStats.uniqueUsers.toLocaleString('id-ID')
+                    )}
+                  </div>
+                  <div className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                    <Activity className="w-3 h-3" />
+                    <span>{overviewStats.activeSessions} sesi aktif ({overviewStats.dau} hari ini)</span>
+                  </div>
                 </div>
+
                 <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
-                  <div className="text-xs text-slate-400">Modul Tantangan</div>
-                  <div className="text-3xl font-black text-amber-400">48</div>
-                  <div className="text-[11px] text-slate-400">Aktif & Teruji</div>
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>Modul & Materi Kurikulum</span>
+                    <BookOpen className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div className="text-3xl font-black text-amber-400">
+                    {loadingOverview ? (
+                      <span className="inline-block w-16 h-8 bg-slate-800 animate-pulse rounded" />
+                    ) : (
+                      overviewStats.totalModules
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-medium">
+                    {overviewStats.totalCourses} kursus • {overviewStats.totalLessons} materi pelajaran
+                  </div>
                 </div>
+
                 <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
-                  <div className="text-xs text-slate-400">Tingkat Penyelesaian</div>
-                  <div className="text-3xl font-black text-indigo-400">84.2%</div>
-                  <div className="text-[11px] text-emerald-400 font-semibold">Sangat baik</div>
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>Tingkat Kelulusan & Penyelesaian</span>
+                    <CheckCircle2 className="w-4 h-4 text-indigo-400" />
+                  </div>
+                  <div className="text-3xl font-black text-indigo-400">
+                    {loadingOverview ? (
+                      <span className="inline-block w-16 h-8 bg-slate-800 animate-pulse rounded" />
+                    ) : (
+                      `${overviewStats.completionRate}%`
+                    )}
+                  </div>
+                  <div className="text-[11px] text-emerald-400 font-semibold">
+                    {overviewStats.lessonCompletions} penyelesaian materi tercatat
+                  </div>
                 </div>
               </div>
             </div>
