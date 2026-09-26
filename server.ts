@@ -3097,6 +3097,118 @@ async function startServer() {
     }
   });
 
+  // Public API: Record Visitor Traffic with Client IP & Device Telemetry
+  app.post('/api/track/visit', async (req, res) => {
+    try {
+      const forwarded = req.headers['x-forwarded-for'];
+      const rawIp = typeof forwarded === 'string' 
+        ? forwarded.split(',')[0].trim() 
+        : (req.socket?.remoteAddress || req.ip || '127.0.0.1');
+      
+      const cleanIp = rawIp.replace(/^::ffff:/, '');
+      const body = req.body || {};
+      const visitId = body.id || `vis_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+      const visitDoc = {
+        id: visitId,
+        ip: cleanIp && cleanIp !== '::1' && cleanIp !== '127.0.0.1' ? cleanIp : (body.ip || cleanIp),
+        city: body.city || undefined,
+        country: body.country || undefined,
+        countryCode: body.countryCode || undefined,
+        region: body.region || undefined,
+        userAgent: body.userAgent || req.headers['user-agent'] || '',
+        browser: body.browser || 'Browser',
+        os: body.os || 'OS',
+        device: body.device || 'Desktop',
+        path: body.path || '/',
+        pageTitle: body.pageTitle || 'COMMANDEV Platform',
+        referrer: body.referrer || req.headers['referer'] || 'Langsung (Direct)',
+        timestamp: body.timestamp || new Date().toISOString(),
+        userId: body.userId || undefined,
+        userEmail: body.userEmail || undefined,
+        userRole: body.userRole || 'guest',
+        sessionId: body.sessionId || `ses_${Date.now()}`,
+        screenResolution: body.screenResolution || undefined,
+        language: body.language || req.headers['accept-language'] || 'id-ID'
+      };
+
+      await adminDb.collection('visitor_traffic').doc(visitId).set(visitDoc, { merge: true });
+      return res.status(200).json({ success: true, id: visitId, ip: visitDoc.ip });
+    } catch (err: any) {
+      console.warn('Error recording visitor traffic on server:', err);
+      return res.status(200).json({ success: false, message: 'Logged' });
+    }
+  });
+
+  // Admin API: Query Visitor Traffic & IP Summary
+  app.get('/api/admin/analytics/traffic', authenticateFirebaseUser, requireAdmin, async (req, res) => {
+    try {
+      const limitCount = Math.min(Math.max(parseInt(String(req.query.limit || '100'), 10) || 100, 10), 300);
+      const snap = await adminDb.collection('visitor_traffic')
+        .orderBy('timestamp', 'desc')
+        .limit(limitCount)
+        .get();
+
+      const entries: any[] = [];
+      const ipMap = new Map<string, { count: number; country?: string; lastSeen: string }>();
+      const sessionSet = new Set<string>();
+      const pageMap = new Map<string, { count: number; title?: string }>();
+      const browserMap = new Map<string, number>();
+      const referrerMap = new Map<string, number>();
+      const todayStr = new Date().toISOString().split('T')[0];
+      let visitsToday = 0;
+      let desktopCount = 0;
+      let mobileCount = 0;
+      let tabletCount = 0;
+
+      snap.forEach((doc) => {
+        const d = doc.data();
+        entries.push(d);
+        const ip = d.ip || 'Unknown';
+        const cur = ipMap.get(ip) || { count: 0, country: d.country, lastSeen: d.timestamp };
+        cur.count += 1;
+        if (!cur.country && d.country) cur.country = d.country;
+        ipMap.set(ip, cur);
+
+        if (d.sessionId) sessionSet.add(d.sessionId);
+        if (d.timestamp && d.timestamp.startsWith(todayStr)) visitsToday += 1;
+
+        if (d.device === 'Mobile') mobileCount += 1;
+        else if (d.device === 'Tablet') tabletCount += 1;
+        else desktopCount += 1;
+
+        const pathKey = d.path || '/';
+        const pageCur = pageMap.get(pathKey) || { count: 0, title: d.pageTitle };
+        pageCur.count += 1;
+        pageMap.set(pathKey, pageCur);
+
+        const b = d.browser || 'Lainnya';
+        browserMap.set(b, (browserMap.get(b) || 0) + 1);
+
+        const r = d.referrer || 'Direct';
+        referrerMap.set(r, (referrerMap.get(r) || 0) + 1);
+      });
+
+      const summary = {
+        totalVisits: entries.length,
+        uniqueIps: ipMap.size,
+        activeSessions: sessionSet.size,
+        visitsToday,
+        deviceBreakdown: { desktop: desktopCount, mobile: mobileCount, tablet: tabletCount },
+        topIps: Array.from(ipMap.entries()).map(([ip, v]) => ({ ip, ...v })).sort((a, b) => b.count - a.count).slice(0, 10),
+        topPages: Array.from(pageMap.entries()).map(([path, v]) => ({ path, ...v })).sort((a, b) => b.count - a.count).slice(0, 10),
+        topBrowsers: Array.from(browserMap.entries()).map(([browser, count]) => ({ browser, count })).sort((a, b) => b.count - a.count),
+        topReferrers: Array.from(referrerMap.entries()).map(([referrer, count]) => ({ referrer, count })).sort((a, b) => b.count - a.count).slice(0, 5),
+        recentVisitors: entries
+      };
+
+      return res.json(summary);
+    } catch (err: any) {
+      console.error('Error fetching visitor traffic summary:', err);
+      return res.status(500).json({ error: 'Gagal mengambil data trafik pengunjung' });
+    }
+  });
+
   // Admin API: Query Raw Analytics Events with Pagination & Filtering
   app.get('/api/admin/analytics/events', authenticateFirebaseUser, requireAdmin, async (req, res) => {
     try {

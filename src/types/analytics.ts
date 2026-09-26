@@ -182,6 +182,43 @@ export interface AnalyticsSummaryDTO {
   contentMetrics?: ContentLifecycleMetricsDTO;
   healthMetrics?: SystemHealthAnalyticsDTO;
   retentionMetrics?: RetentionMetricDTO[];
+  visitorSummary?: VisitorTrafficSummary;
+}
+
+export interface VisitorTrafficEntry {
+  id: string;
+  ip: string;
+  city?: string;
+  country?: string;
+  countryCode?: string;
+  region?: string;
+  userAgent: string;
+  browser: string;
+  os: string;
+  device: 'Desktop' | 'Mobile' | 'Tablet';
+  path: string;
+  pageTitle: string;
+  referrer: string;
+  timestamp: string; // ISO 8601 string
+  userId?: string;
+  userEmail?: string;
+  userRole?: string;
+  sessionId: string;
+  screenResolution?: string;
+  language?: string;
+}
+
+export interface VisitorTrafficSummary {
+  totalVisits: number;
+  uniqueIps: number;
+  activeSessions: number;
+  visitsToday: number;
+  deviceBreakdown: { desktop: number; mobile: number; tablet: number };
+  topIps: { ip: string; count: number; country?: string; lastSeen: string }[];
+  topPages: { path: string; count: number; title?: string }[];
+  topBrowsers: { browser: string; count: number }[];
+  topReferrers: { referrer: string; count: number }[];
+  recentVisitors: VisitorTrafficEntry[];
 }
 
 export interface RawEventsQueryResponse {

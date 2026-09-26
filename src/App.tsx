@@ -31,6 +31,7 @@ import { getUserProgress, updateUserProgress } from './lib/db';
 import { SettingsProvider } from './lib/SettingsContext';
 import { PublicProjectProgressDTO } from './types/projectProgress';
 import { analyticsService } from './services/analytics';
+import { visitorTracker } from './services/analytics/visitorTrackingService';
 
 type AppState = 'landing' | 'app' | 'studio' | 'admin-login' | 'admin-dashboard' | 'about-us';
 
@@ -277,6 +278,13 @@ export default function App() {
     localStorage.setItem('commandev_current_section', currentSection);
     localStorage.setItem('codera_current_section', currentSection);
   }, [currentSection]);
+
+  // Real Visitor Traffic & IP Telemetry Tracking
+  useEffect(() => {
+    const currentPath = appState === 'landing' ? '/' : appState === 'admin-dashboard' ? '/admin' : `/${currentSection}`;
+    const pageTitle = `COMMANDEV — ${appState === 'landing' ? 'Beranda' : appState === 'admin-dashboard' ? 'Admin CMS' : currentSection}`;
+    visitorTracker.recordVisit(currentPath, pageTitle);
+  }, [appState, currentSection]);
 
   // Sync state based on user auth
   useEffect(() => {

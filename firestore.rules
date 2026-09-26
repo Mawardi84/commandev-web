@@ -18,6 +18,7 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         (request.auth.token.keys().hasAny(['admin']) && request.auth.token.admin == true) ||
+        (request.auth.token.keys().hasAny(['email']) && request.auth.token.email in ['fxmawardi@gmail.com', 'admin@commandev.com', 'admin@codera.academy']) ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
@@ -162,6 +163,12 @@ service cloud.firestore {
     // Scalable Daily Analytics Summary (Admin Full Access, Students blocked completely)
     match /analytics_daily/{date} {
       allow read, write: if isAdmin() && isValidId(date);
+    }
+
+    // Visitor Traffic & IP Logging (Public write for real visit telemetry, Admin read/list/manage)
+    match /visitor_traffic/{visitId} {
+      allow create: if isValidId(visitId);
+      allow read, list, update, delete: if isAdmin();
     }
   }
 }

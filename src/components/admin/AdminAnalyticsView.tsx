@@ -26,25 +26,42 @@ import {
   Server,
   Database,
   ArrowRight,
-  X
+  X,
+  Globe,
+  Copy,
+  Check,
+  Laptop,
+  Smartphone,
+  Compass,
+  MapPin,
+  ExternalLink
 } from 'lucide-react';
 import { 
   AnalyticsSummaryDTO, 
   AnalyticsDateRange, 
   AnalyticsEvent, 
   CourseAnalyticsDTO, 
-  SimulatorAnalyticsDTO 
+  SimulatorAnalyticsDTO,
+  VisitorTrafficSummary,
+  VisitorTrafficEntry
 } from '../../types/analytics';
-import { fetchAnalyticsSummary, fetchRawAnalyticsEvents, RawEventsQueryParams } from '../../services/analytics/analyticsApiClient';
+import { fetchAnalyticsSummary, fetchRawAnalyticsEvents, fetchVisitorTraffic, RawEventsQueryParams } from '../../services/analytics/analyticsApiClient';
 
 export function AdminAnalyticsView() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'quizzes' | 'projects' | 'simulators' | 'raw-events' | 'health'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'traffic' | 'courses' | 'quizzes' | 'projects' | 'simulators' | 'raw-events' | 'health'>('overview');
   const [dateRange, setDateRange] = useState<AnalyticsDateRange>('30d');
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<AnalyticsSummaryDTO | null>(null);
+
+  // Visitor Traffic & IP Explorer states
+  const [trafficData, setTrafficData] = useState<VisitorTrafficSummary | null>(null);
+  const [trafficLoading, setTrafficLoading] = useState<boolean>(false);
+  const [trafficSearch, setTrafficSearch] = useState<string>('');
+  const [trafficDeviceFilter, setTrafficDeviceFilter] = useState<'all' | 'Desktop' | 'Mobile' | 'Tablet'>('all');
+  const [copiedIp, setCopiedIp] = useState<string | null>(null);
 
   // Selected course for detail modal
   const [selectedCourse, setSelectedCourse] = useState<CourseAnalyticsDTO | null>(null);
@@ -79,9 +96,35 @@ export function AdminAnalyticsView() {
     }
   }, [dateRange, customStart, customEnd]);
 
+  // Load visitor traffic data
+  const loadTraffic = useCallback(async () => {
+    setTrafficLoading(true);
+    try {
+      const data = await fetchVisitorTraffic(100);
+      setTrafficData(data);
+    } catch (err: any) {
+      console.warn('Gagal memuat trafik:', err);
+    } finally {
+      setTrafficLoading(false);
+    }
+  }, []);
+
+  const handleCopyIp = (ip: string) => {
+    navigator.clipboard.writeText(ip);
+    setCopiedIp(ip);
+    setTimeout(() => setCopiedIp(null), 2000);
+  };
+
   useEffect(() => {
     loadSummary();
-  }, [loadSummary]);
+    loadTraffic();
+  }, [loadSummary, loadTraffic]);
+
+  useEffect(() => {
+    if (activeTab === 'traffic') {
+      loadTraffic();
+    }
+  }, [activeTab, loadTraffic]);
 
   // Load raw events when raw-events tab is active
   const loadRawEvents = useCallback(async (pageToLoad = 1) => {
@@ -191,6 +234,7 @@ export function AdminAnalyticsView() {
       <div className="flex items-center gap-1.5 overflow-x-auto border-b border-slate-800 pb-2 custom-scrollbar text-xs">
         {[
           { id: 'overview', label: 'Ringkasan Eksekutif', icon: BarChart3 },
+          { id: 'traffic', label: 'Trafik Pengunjung & IP', icon: Globe },
           { id: 'courses', label: '24 Kursus & Modul', icon: BookOpen },
           { id: 'quizzes', label: 'Analitik Kuis', icon: CheckCircle2 },
           { id: 'projects', label: 'Evaluator Proyek (26)', icon: Rocket },
@@ -238,6 +282,33 @@ export function AdminAnalyticsView() {
       {/* TAB 1: OVERVIEW */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
+          {/* Live Visitor Traffic & IP Telemetry Banner */}
+          <div className="p-5 rounded-3xl bg-gradient-to-r from-blue-950/70 via-slate-900 to-indigo-950/70 border border-blue-500/30 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center shrink-0">
+                <Globe className="w-6 h-6 animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-black text-white">Observasi Trafik Pengunjung & Alamat IP (Live)</h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Live Telemetry
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300">
+                  Total <strong className="text-white font-mono">{fmt(summary?.visitorSummary?.totalVisits || trafficData?.totalVisits)}</strong> kunjungan terdeteksi dari <strong className="text-amber-400 font-mono">{fmt(summary?.visitorSummary?.uniqueIps || trafficData?.uniqueIps)}</strong> IP unik. Kunjungan hari ini: <strong className="text-emerald-400 font-mono">{fmt(summary?.visitorSummary?.visitsToday || trafficData?.visitsToday)}</strong>.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab('traffic')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition-all cursor-pointer whitespace-nowrap"
+            >
+              <span>Buka Log Trafik & IP Lengkap</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+
           {/* Top KPI Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
@@ -466,6 +537,399 @@ export function AdminAnalyticsView() {
                   </p>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: VISITOR TRAFFIC & IP EXPLORER */}
+      {activeTab === 'traffic' && (
+        <div className="space-y-6">
+          {/* 1. Traffic KPI Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Total Kunjungan</span>
+                <Globe className="w-4 h-4 text-blue-400" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-white">
+                {trafficLoading ? <span className="text-slate-600 animate-pulse">...</span> : fmt(trafficData?.totalVisits || summary?.visitorSummary?.totalVisits)}
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Log kunjungan terobservasi
+              </div>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Alamat IP Unik</span>
+                <MapPin className="w-4 h-4 text-amber-400" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-amber-400">
+                {trafficLoading ? <span className="text-slate-600 animate-pulse">...</span> : fmt(trafficData?.uniqueIps || summary?.visitorSummary?.uniqueIps)}
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Pengunjung unik teridentifikasi
+              </div>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Kunjungan Hari Ini</span>
+                <Clock className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-emerald-400">
+                {trafficLoading ? <span className="text-slate-600 animate-pulse">...</span> : fmt(trafficData?.visitsToday || summary?.visitorSummary?.visitsToday)}
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Aktivitas hari ini (WIB)
+              </div>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Sesi Aktif</span>
+                <Activity className="w-4 h-4 text-cyan-400" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-cyan-400">
+                {trafficLoading ? <span className="text-slate-600 animate-pulse">...</span> : fmt(trafficData?.activeSessions || summary?.visitorSummary?.activeSessions)}
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Sesi penjelajahan unik
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Top Insights Breakdown (Top IPs, Top Pages, Devices, Browsers) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Top IPs */}
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Top Alamat IP</span>
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">Frekuensi</span>
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                {(trafficData?.topIps || summary?.visitorSummary?.topIps || []).length > 0 ? (
+                  (trafficData?.topIps || summary?.visitorSummary?.topIps || []).slice(0, 5).map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-950 border border-slate-800/80">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="font-mono text-amber-300 font-bold text-[11px] truncate">{item.ip}</span>
+                        <button
+                          onClick={() => handleCopyIp(item.ip)}
+                          title="Salin Alamat IP"
+                          className="text-slate-400 hover:text-white p-0.5 cursor-pointer"
+                        >
+                          {copiedIp === item.ip ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        </button>
+                      </div>
+                      <span className="text-[11px] font-bold text-white px-2 py-0.5 rounded-full bg-slate-800 shrink-0 font-mono">
+                        {item.count}x
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-[11px] text-slate-500 text-center py-4">Belum ada data IP</div>
+                )}
+              </div>
+            </div>
+
+            {/* Top Visited Pages */}
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Compass className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Halaman Terpopuler</span>
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">Hits</span>
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                {(trafficData?.topPages || summary?.visitorSummary?.topPages || []).length > 0 ? (
+                  (trafficData?.topPages || summary?.visitorSummary?.topPages || []).slice(0, 5).map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-950 border border-slate-800/80">
+                      <span className="font-mono text-blue-300 text-[11px] truncate max-w-[130px]">{item.path}</span>
+                      <span className="text-[11px] font-bold text-white px-2 py-0.5 rounded-full bg-slate-800 shrink-0 font-mono">
+                        {item.count}x
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-[11px] text-slate-500 text-center py-4">Belum ada kunjungan</div>
+                )}
+              </div>
+            </div>
+
+            {/* Device Breakdown */}
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Laptop className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Perangkat Pengunjung</span>
+                </span>
+              </div>
+              <div className="space-y-2.5 text-xs">
+                {(() => {
+                  const bd = trafficData?.deviceBreakdown || summary?.visitorSummary?.deviceBreakdown || { desktop: 0, mobile: 0, tablet: 0 };
+                  const total = Math.max(bd.desktop + bd.mobile + bd.tablet, 1);
+                  const dPct = Math.round((bd.desktop / total) * 100);
+                  const mPct = Math.round((bd.mobile / total) * 100);
+                  const tPct = Math.round((bd.tablet / total) * 100);
+                  return (
+                    <>
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="text-slate-300">Desktop / Laptop</span>
+                          <span className="font-bold text-white font-mono">{dPct}% ({bd.desktop})</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
+                          <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${dPct}%` }} />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="text-slate-300">Smartphone / Mobile</span>
+                          <span className="font-bold text-white font-mono">{mPct}% ({bd.mobile})</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
+                          <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${mPct}%` }} />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="text-slate-300">Tablet</span>
+                          <span className="font-bold text-white font-mono">{tPct}% ({bd.tablet})</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
+                          <div className="h-full bg-violet-400 rounded-full" style={{ width: `${tPct}%` }} />
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Browser Breakdown */}
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Compass className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Browser Pengunjung</span>
+                </span>
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                {(trafficData?.topBrowsers || summary?.visitorSummary?.topBrowsers || []).length > 0 ? (
+                  (trafficData?.topBrowsers || summary?.visitorSummary?.topBrowsers || []).slice(0, 5).map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-950 border border-slate-800/80">
+                      <span className="text-slate-300 text-[11px] truncate">{item.browser}</span>
+                      <span className="text-[11px] font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 shrink-0 font-mono">
+                        {item.count}x
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-[11px] text-slate-500 text-center py-4">Belum ada data</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Real-time Visitor Traffic Log Table */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>Log Kunjungan Pengunjung & Alamat IP (Real-time)</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 font-mono">
+                    Live Telemetry
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Daftar rinci setiap akses pengunjung beserta IP address, lokasi, halaman yang dibuka, perangkat, dan browser.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Search Bar */}
+                <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
+                  <Search className="w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={trafficSearch}
+                    onChange={(e) => setTrafficSearch(e.target.value)}
+                    placeholder="Cari IP, Halaman, Browser..."
+                    className="bg-transparent text-white text-xs outline-none placeholder:text-slate-600 w-44"
+                  />
+                  {trafficSearch && (
+                    <button onClick={() => setTrafficSearch('')} className="text-slate-500 hover:text-white">✕</button>
+                  )}
+                </div>
+
+                {/* Device Filter */}
+                <select
+                  value={trafficDeviceFilter}
+                  onChange={(e) => setTrafficDeviceFilter(e.target.value as any)}
+                  className="bg-slate-950 text-slate-300 border border-slate-800 px-3 py-1.5 rounded-xl text-xs outline-none"
+                >
+                  <option value="all">Semua Perangkat</option>
+                  <option value="Desktop">Desktop</option>
+                  <option value="Mobile">Mobile</option>
+                  <option value="Tablet">Tablet</option>
+                </select>
+
+                <button
+                  onClick={loadTraffic}
+                  disabled={trafficLoading}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+                  title="Segarkan Log Kunjungan"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${trafficLoading ? 'animate-spin text-amber-400' : ''}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto rounded-2xl border border-slate-800">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-950 text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-800">
+                  <tr>
+                    <th className="py-3 px-4">Waktu</th>
+                    <th className="py-3 px-4">Alamat IP</th>
+                    <th className="py-3 px-4">Halaman yang Dikunjungi</th>
+                    <th className="py-3 px-4">Perangkat & OS</th>
+                    <th className="py-3 px-4">Browser</th>
+                    <th className="py-3 px-4">Sumber (Referrer)</th>
+                    <th className="py-3 px-4">Pengguna</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 bg-slate-900/50">
+                  {(() => {
+                    const allVisitors = trafficData?.recentVisitors || summary?.visitorSummary?.recentVisitors || [];
+                    const filtered = allVisitors.filter((v) => {
+                      if (trafficDeviceFilter !== 'all' && v.device !== trafficDeviceFilter) return false;
+                      if (!trafficSearch) return true;
+                      const q = trafficSearch.toLowerCase();
+                      return (
+                        (v.ip && v.ip.toLowerCase().includes(q)) ||
+                        (v.path && v.path.toLowerCase().includes(q)) ||
+                        (v.browser && v.browser.toLowerCase().includes(q)) ||
+                        (v.os && v.os.toLowerCase().includes(q)) ||
+                        (v.country && v.country.toLowerCase().includes(q)) ||
+                        (v.userEmail && v.userEmail.toLowerCase().includes(q))
+                      );
+                    });
+
+                    if (trafficLoading) {
+                      return (
+                        <tr>
+                          <td colSpan={7} className="py-12 text-center text-slate-500">
+                            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-400 mb-2" />
+                            <span>Memuat data trafik pengunjung...</span>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    if (filtered.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={7} className="py-12 text-center text-slate-500">
+                            <Globe className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                            <span>Belum ada log kunjungan yang sesuai kriteria pencarian.</span>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return filtered.map((v) => {
+                      const dateObj = new Date(v.timestamp);
+                      const timeStr = isNaN(dateObj.getTime()) ? v.timestamp : dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                      const dateStr = isNaN(dateObj.getTime()) ? '' : dateObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+
+                      return (
+                        <tr key={v.id} className="hover:bg-slate-800/40 transition-colors">
+                          {/* Waktu */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="font-bold text-slate-200">{timeStr}</div>
+                            <div className="text-[10px] text-slate-500">{dateStr}</div>
+                          </td>
+
+                          {/* IP Address */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-amber-300 font-bold bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
+                                {v.ip || '127.0.0.1'}
+                              </span>
+                              <button
+                                onClick={() => handleCopyIp(v.ip)}
+                                title="Salin IP"
+                                className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800 transition-colors cursor-pointer"
+                              >
+                                {copiedIp === v.ip ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                            {v.country && (
+                              <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                <MapPin className="w-3 h-3 text-slate-500" />
+                                <span>{v.city ? `${v.city}, ` : ''}{v.country}</span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Halaman */}
+                          <td className="py-3 px-4">
+                            <div className="font-mono text-blue-300 font-medium truncate max-w-xs">{v.path}</div>
+                            <div className="text-[10px] text-slate-500 truncate max-w-xs">{v.pageTitle}</div>
+                          </td>
+
+                          {/* Perangkat & OS */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 text-slate-300 font-medium">
+                              {v.device === 'Mobile' ? (
+                                <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+                              ) : (
+                                <Laptop className="w-3.5 h-3.5 text-cyan-400" />
+                              )}
+                              <span>{v.device}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-500">{v.os}</div>
+                          </td>
+
+                          {/* Browser */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span className="text-slate-300 font-medium">{v.browser}</span>
+                          </td>
+
+                          {/* Referrer */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span className="text-slate-400 text-[11px] truncate block max-w-[140px]">{v.referrer || 'Langsung (Direct)'}</span>
+                          </td>
+
+                          {/* Pengguna */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            {v.userEmail ? (
+                              <div>
+                                <span className="text-emerald-300 font-medium">{v.userEmail}</span>
+                                <div className="text-[9px] text-emerald-500 uppercase font-mono">{v.userRole || 'Siswa'}</div>
+                              </div>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
+                                Pengunjung Tamu
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

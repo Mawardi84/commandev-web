@@ -322,6 +322,30 @@
         "properties": { "type": "object" }
       },
       "required": ["eventId", "eventName", "timestamp", "source"]
+    },
+    "VisitorTraffic": {
+      "title": "VisitorTraffic",
+      "description": "Visitor traffic log containing IP address, device, location, referrer, and page visited",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ip": { "type": "string" },
+        "city": { "type": "string" },
+        "country": { "type": "string" },
+        "region": { "type": "string" },
+        "userAgent": { "type": "string" },
+        "browser": { "type": "string" },
+        "os": { "type": "string" },
+        "device": { "type": "string" },
+        "path": { "type": "string" },
+        "pageTitle": { "type": "string" },
+        "referrer": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "sessionId": { "type": "string" }
+      },
+      "required": ["id", "ip", "timestamp", "path"]
     }
   },
   "firestore": {
@@ -388,6 +412,10 @@
     "/analytics_events/{eventId}": {
       "schema": "AnalyticsEvent",
       "description": "Observational analytics telemetry event stream"
+    },
+    "/visitor_traffic/{visitId}": {
+      "schema": "VisitorTraffic",
+      "description": "Real visitor traffic logs, IP address, device, and page visit telemetry"
     },
     "/audit_logs/{logId}": {
       "schema": "AuditLog",
