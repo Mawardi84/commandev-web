@@ -28183,16 +28183,6 @@ var requireAdmin = async (req, res, next) => {
     if (adminDoc.exists && adminDoc.data()?.status === "active") {
       return next();
     }
-    const userEmail = (req.user.email || "").toLowerCase().trim();
-    if (userEmail === "fxmawardi@gmail.com" || userEmail === "admin@commandev.com" || userEmail === "admin@codera.academy") {
-      await adminDb.collection("admins").doc(req.user.uid).set({
-        email: req.user.email,
-        status: "active",
-        role: "owner",
-        createdAt: (/* @__PURE__ */ new Date()).toISOString()
-      }, { merge: true });
-      return next();
-    }
   } catch (e) {
     console.error("Error verifying admin document in Firestore:", e);
   }
@@ -31996,7 +31986,7 @@ Berikan output JSON yang valid murni (tanpa pembungkus markdown apapun, langsung
   } else {
     const distPath = import_path.default.join(process.cwd(), "dist");
     app.use(import_express.default.static(distPath));
-    app.get("*", (req, res) => {
+    app.get("/{*splat}", (req, res) => {
       res.sendFile(import_path.default.join(distPath, "index.html"));
     });
   }
