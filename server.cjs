@@ -4,6 +4,10 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
@@ -20,10 +24,17 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // server.ts
+var server_exports = {};
+__export(server_exports, {
+  appPromise: () => appPromise
+});
+module.exports = __toCommonJS(server_exports);
 var import_express = __toESM(require("express"), 1);
 var import_path = __toESM(require("path"), 1);
+var import_crypto = __toESM(require("crypto"), 1);
 var import_vite = require("vite");
 var import_genai = require("@google/genai");
 var import_firebase_admin = __toESM(require("firebase-admin"), 1);
@@ -28132,17 +28143,28 @@ var requireAdmin = async (req, res, next) => {
   }
   try {
     const adminDoc = await adminDb.collection("admins").doc(req.user.uid).get();
-    if (adminDoc.exists) {
+    if (adminDoc.exists && adminDoc.data()?.status === "active") {
+      return next();
+    }
+    const userEmail = (req.user.email || "").toLowerCase().trim();
+    if (userEmail === "fxmawardi@gmail.com" || userEmail === "admin@commandev.com" || userEmail === "admin@codera.academy") {
+      await adminDb.collection("admins").doc(req.user.uid).set({
+        email: req.user.email,
+        status: "active",
+        role: "owner",
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      }, { merge: true });
       return next();
     }
   } catch (e) {
-    console.error("Error verifying admin document:", e);
+    console.error("Error verifying admin document in Firestore:", e);
   }
   return res.status(403).json({ error: "Forbidden" });
 };
 async function startServer() {
   const app = (0, import_express.default)();
   const PORT = 3e3;
+  app.set("trust proxy", 1);
   app.use(import_express.default.json({ limit: "10mb" }));
   let ai = null;
   const getAi = () => {
@@ -30565,6 +30587,241 @@ async function startServer() {
       return res.status(500).json({ error: "Gagal merekam event analitik." });
     }
   });
+  const visitorRateLimitMap = /* @__PURE__ */ new Map();
+  const visitorPathDedupMap = /* @__PURE__ */ new Map();
+  const RATE_LIMIT_WINDOW_MS = 60 * 1e3;
+  const MAX_VISITS_PER_WINDOW = 30;
+  const PATH_DEDUP_WINDOW_MS = 10 * 1e3;
+  const IP_HASH_SALT = process.env.ANALYTICS_IP_SALT || "commandev_sec_salt_2026";
+  function extractClientIp(req) {
+    let rawIp = "";
+    if (req.ip) {
+      rawIp = req.ip;
+    } else if (req.socket?.remoteAddress) {
+      rawIp = req.socket.remoteAddress;
+    } else {
+      const forwarded = req.headers["x-forwarded-for"];
+      if (typeof forwarded === "string" && forwarded.trim()) {
+        rawIp = forwarded.split(",")[0].trim();
+      } else if (Array.isArray(forwarded) && forwarded.length > 0) {
+        rawIp = forwarded[0].trim();
+      } else if (req.headers["x-real-ip"]) {
+        rawIp = String(req.headers["x-real-ip"]).trim();
+      }
+    }
+    const cleanIp = rawIp.replace(/^::ffff:/, "").trim();
+    const isIpv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(cleanIp);
+    const isIpv6 = cleanIp.includes(":");
+    if (isIpv4 || isIpv6) {
+      return cleanIp;
+    }
+    return "unknown";
+  }
+  function hashIp(ip) {
+    if (!ip || ip === "unknown") return "unknown_hash";
+    return import_crypto.default.createHmac("sha256", IP_HASH_SALT).update(ip).digest("hex").substring(0, 16);
+  }
+  function maskIp(ip) {
+    if (!ip || ip === "unknown") return "unknown";
+    if (ip === "127.0.0.1" || ip === "::1") return "127.***.***.1";
+    const parts = ip.split(".");
+    if (parts.length === 4) {
+      return `${parts[0]}.***.***.${parts[3]}`;
+    }
+    const v6Parts = ip.split(":");
+    if (v6Parts.length >= 2) {
+      return `${v6Parts[0]}:${v6Parts[1]}:****:****`;
+    }
+    return "***.***.***.***";
+  }
+  const geoCache = /* @__PURE__ */ new Map();
+  async function resolveGeo(ip) {
+    if (!ip || ip === "unknown") {
+      return { country: "Unknown", countryCode: "XX", region: "Unknown", city: "Unknown" };
+    }
+    if (ip === "127.0.0.1" || ip === "::1" || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("172.16.")) {
+      return { country: "Local Network", countryCode: "LO", region: "Localhost", city: "Localhost" };
+    }
+    if (geoCache.has(ip)) {
+      return geoCache.get(ip);
+    }
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
+      const res = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, {
+        signal: controller.signal,
+        headers: { "User-Agent": "COMMANDEV-Analytics/2.5" }
+      }).catch(() => null);
+      clearTimeout(timeoutId);
+      if (res && res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && (data.country_name || data.country)) {
+          const result = {
+            country: String(data.country_name || data.country || "Unknown"),
+            countryCode: String(data.country_code || data.country || "XX").toUpperCase(),
+            region: String(data.region || "Unknown"),
+            city: String(data.city || "Unknown")
+          };
+          geoCache.set(ip, result);
+          return result;
+        }
+      }
+    } catch {
+    }
+    const fallback = { country: "Unknown", countryCode: "XX", region: "Unknown", city: "Unknown" };
+    geoCache.set(ip, fallback);
+    return fallback;
+  }
+  app.post("/api/track/visit", async (req, res) => {
+    try {
+      const cleanIp = extractClientIp(req);
+      const now = Date.now();
+      const rateData = visitorRateLimitMap.get(cleanIp) || { count: 0, windowStart: now };
+      if (now - rateData.windowStart > RATE_LIMIT_WINDOW_MS) {
+        rateData.count = 1;
+        rateData.windowStart = now;
+      } else {
+        rateData.count += 1;
+      }
+      visitorRateLimitMap.set(cleanIp, rateData);
+      if (rateData.count > MAX_VISITS_PER_WINDOW) {
+        return res.status(200).json({ success: false, message: "Rate limit applied" });
+      }
+      const body = req.body || {};
+      const rawSessionId = String(body.sessionId || "").substring(0, 64);
+      const rawPath = String(body.path || "/").substring(0, 200);
+      const dedupKey = `${cleanIp}_${rawSessionId}_${rawPath}`;
+      const lastSeenTime = visitorPathDedupMap.get(dedupKey) || 0;
+      if (now - lastSeenTime < PATH_DEDUP_WINDOW_MS) {
+        return res.status(200).json({ success: true, deduped: true });
+      }
+      visitorPathDedupMap.set(dedupKey, now);
+      if (visitorPathDedupMap.size > 2e3) {
+        visitorPathDedupMap.clear();
+      }
+      const visitId = `vis_${now}_${Math.random().toString(36).substring(2, 8)}`;
+      let verifiedUid = void 0;
+      let visitorType = "anonymous";
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith("Bearer ")) {
+        const token = authHeader.split("Bearer ")[1];
+        try {
+          const decoded = await adminAuth.verifyIdToken(token);
+          if (decoded && decoded.uid) {
+            verifiedUid = decoded.uid;
+            visitorType = "authenticated";
+          }
+        } catch {
+        }
+      }
+      const maskedIp = maskIp(cleanIp);
+      const ipHash = hashIp(cleanIp);
+      const geo = await resolveGeo(cleanIp);
+      const visitDoc = {
+        id: visitId,
+        maskedIp,
+        ipHash,
+        city: geo.city,
+        country: geo.country,
+        countryCode: geo.countryCode,
+        region: geo.region,
+        userAgent: String(req.headers["user-agent"] || "").substring(0, 250),
+        browser: String(body.browser || "Browser").substring(0, 50),
+        os: String(body.os || "OS").substring(0, 50),
+        device: ["Desktop", "Mobile", "Tablet"].includes(body.device) ? body.device : "Desktop",
+        path: String(body.path || "/").substring(0, 200),
+        pageTitle: String(body.pageTitle || "COMMANDEV Platform").substring(0, 100),
+        referrer: String(body.referrer || req.headers["referer"] || "Langsung (Direct)").substring(0, 200),
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        visitorType,
+        userId: verifiedUid,
+        // Firebase UID only (no email or PII)
+        sessionId: String(body.sessionId || `ses_${now}`).substring(0, 64)
+      };
+      await adminDb.collection("visitor_traffic").doc(visitId).set(visitDoc, { merge: true });
+      return res.status(200).json({ success: true, id: visitId });
+    } catch (err) {
+      console.warn("Error recording visitor traffic on server:", err);
+      return res.status(200).json({ success: false, message: "Logged" });
+    }
+  });
+  app.get("/api/admin/analytics/traffic", authenticateFirebaseUser, requireAdmin, async (req, res) => {
+    try {
+      const limitCount = Math.min(Math.max(parseInt(String(req.query.limit || "100"), 10) || 100, 10), 300);
+      const snap = await adminDb.collection("visitor_traffic").orderBy("timestamp", "desc").limit(limitCount).get();
+      const entries = [];
+      const ipMap = /* @__PURE__ */ new Map();
+      const sessionSet = /* @__PURE__ */ new Set();
+      const pageMap = /* @__PURE__ */ new Map();
+      const browserMap = /* @__PURE__ */ new Map();
+      const referrerMap = /* @__PURE__ */ new Map();
+      const todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      let visitsToday = 0;
+      let desktopCount = 0;
+      let mobileCount = 0;
+      let tabletCount = 0;
+      snap.forEach((doc) => {
+        const d = doc.data();
+        const masked = d.maskedIp || maskIp(d.ip || "unknown");
+        const hash = d.ipHash || hashIp(d.ip || "unknown");
+        const sanitizedEntry = {
+          id: d.id || doc.id,
+          maskedIp: masked,
+          ipHash: hash,
+          ip: masked,
+          // Alias for UI display
+          city: d.city,
+          country: d.country,
+          countryCode: d.countryCode,
+          region: d.region,
+          browser: d.browser || "Browser",
+          os: d.os || "OS",
+          device: d.device || "Desktop",
+          path: d.path || "/",
+          pageTitle: d.pageTitle || "COMMANDEV",
+          referrer: d.referrer || "Direct",
+          timestamp: d.timestamp,
+          visitorType: d.visitorType || (d.userId ? "authenticated" : "anonymous"),
+          userId: d.userId,
+          sessionId: d.sessionId || "ses_unknown"
+        };
+        entries.push(sanitizedEntry);
+        const cur = ipMap.get(hash) || { maskedIp: masked, ipHash: hash, count: 0, country: d.country, lastSeen: d.timestamp };
+        cur.count += 1;
+        if (!cur.country && d.country) cur.country = d.country;
+        ipMap.set(hash, cur);
+        if (d.sessionId) sessionSet.add(d.sessionId);
+        if (d.timestamp && d.timestamp.startsWith(todayStr)) visitsToday += 1;
+        if (d.device === "Mobile") mobileCount += 1;
+        else if (d.device === "Tablet") tabletCount += 1;
+        else desktopCount += 1;
+        const pathKey = d.path || "/";
+        const pageCur = pageMap.get(pathKey) || { count: 0, title: d.pageTitle };
+        pageCur.count += 1;
+        pageMap.set(pathKey, pageCur);
+        const b = d.browser || "Lainnya";
+        browserMap.set(b, (browserMap.get(b) || 0) + 1);
+        const r = d.referrer || "Direct";
+        referrerMap.set(r, (referrerMap.get(r) || 0) + 1);
+      });
+      const summary = {
+        totalVisits: entries.length,
+        uniqueIps: ipMap.size,
+        activeSessions: sessionSet.size,
+        visitsToday,
+        deviceBreakdown: { desktop: desktopCount, mobile: mobileCount, tablet: tabletCount },
+        topIps: Array.from(ipMap.values()).map((v) => ({ ip: v.maskedIp, ...v })).sort((a, b) => b.count - a.count).slice(0, 10),
+        topPages: Array.from(pageMap.entries()).map(([path2, v]) => ({ path: path2, ...v })).sort((a, b) => b.count - a.count).slice(0, 10),
+        topBrowsers: Array.from(browserMap.entries()).map(([browser, count]) => ({ browser, count })).sort((a, b) => b.count - a.count),
+        topReferrers: Array.from(referrerMap.entries()).map(([referrer, count]) => ({ referrer, count })).sort((a, b) => b.count - a.count).slice(0, 5),
+        recentVisitors: entries
+      };
+      return res.json(summary);
+    } catch (err) {
+      console.error("Error fetching visitor traffic summary:", err);
+      return res.status(500).json({ error: "Gagal mengambil data trafik pengunjung" });
+    }
+  });
   app.get("/api/admin/analytics/events", authenticateFirebaseUser, requireAdmin, async (req, res) => {
     try {
       const page = Math.max(parseInt(String(req.query.page || "1"), 10) || 1, 1);
@@ -31689,6 +31946,9 @@ Berikan output JSON yang valid murni (tanpa pembungkus markdown apapun, langsung
       res.status(500).json({ error: error.message || "Error generating TTS audio" });
     }
   });
+  app.all(/^\/api\/.*/, (req, res) => {
+    res.status(404).json({ error: `API endpoint ${req.method} ${req.path} not found` });
+  });
   if (process.env.NODE_ENV !== "production") {
     const vite = await (0, import_vite.createServer)({
       server: { middlewareMode: true },
@@ -31702,9 +31962,16 @@ Berikan output JSON yang valid murni (tanpa pembungkus markdown apapun, langsung
       res.sendFile(import_path.default.join(distPath, "index.html"));
     });
   }
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`CODERA Server running on http://localhost:${PORT}`);
-  });
+  if (process.env.VERCEL !== "1") {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`CODERA Server running on http://localhost:${PORT}`);
+    });
+  }
+  return app;
 }
-startServer();
+var appPromise = startServer();
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  appPromise
+});
 //# sourceMappingURL=server.cjs.map
