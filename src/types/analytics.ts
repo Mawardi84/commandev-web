@@ -187,12 +187,14 @@ export interface AnalyticsSummaryDTO {
 
 export interface VisitorTrafficEntry {
   id: string;
-  ip: string;
+  maskedIp: string; // Privacy-preserving masked IP (e.g. 103.***.***.42)
+  ipHash: string;   // Cryptographic SHA-256 hash for cardinality without raw IP exposure
+  ip?: string;      // Alias pointing to maskedIp for display compatibility
   city?: string;
   country?: string;
   countryCode?: string;
   region?: string;
-  userAgent: string;
+  userAgent?: string;
   browser: string;
   os: string;
   device: 'Desktop' | 'Mobile' | 'Tablet';
@@ -200,9 +202,8 @@ export interface VisitorTrafficEntry {
   pageTitle: string;
   referrer: string;
   timestamp: string; // ISO 8601 string
-  userId?: string;
-  userEmail?: string;
-  userRole?: string;
+  visitorType: 'authenticated' | 'anonymous';
+  userId?: string;  // Firebase UID only (no email or PII)
   sessionId: string;
   screenResolution?: string;
   language?: string;
@@ -214,7 +215,7 @@ export interface VisitorTrafficSummary {
   activeSessions: number;
   visitsToday: number;
   deviceBreakdown: { desktop: number; mobile: number; tablet: number };
-  topIps: { ip: string; count: number; country?: string; lastSeen: string }[];
+  topIps: { ip: string; maskedIp?: string; ipHash?: string; count: number; country?: string; lastSeen: string }[];
   topPages: { path: string; count: number; title?: string }[];
   topBrowsers: { browser: string; count: number }[];
   topReferrers: { referrer: string; count: number }[];

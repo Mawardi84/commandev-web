@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import admin from 'firebase-admin';
@@ -132,6 +133,9 @@ const requireAdmin = async (req: express.Request, res: express.Response, next: e
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // Deployment-aware trusted proxy configuration (Cloud Run, Vercel, reverse proxies)
+  app.set('trust proxy', 1);
 
   // Middleware to parse JSON body with high limit for code snippets
   app.use(express.json({ limit: '10mb' }));
@@ -3097,50 +3101,193 @@ async function startServer() {
     }
   });
 
-  // Public API: Record Visitor Traffic with Client IP & Device Telemetry
+  // In-memory rate limiting & deduplication maps for /api/track/visit
+  const visitorRateLimitMap = new Map<string, { count: number; windowStart: number }>();
+  const visitorPathDedupMap = new Map<string, number>();
+  const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+  const MAX_VISITS_PER_WINDOW = 30; // Max 30 visits/min per IP
+  const PATH_DEDUP_WINDOW_MS = 10 * 1000; // 10 seconds deduplication per session+path
+  const IP_HASH_SALT = process.env.ANALYTICS_IP_SALT || 'commandev_sec_salt_2026';
+
+  function extractClientIp(req: express.Request): string {
+    let rawIp = '';
+    // When trust proxy is enabled, req.ip is populated by Express using the trusted proxy configuration
+    if (req.ip) {
+      rawIp = req.ip;
+    } else if (req.socket?.remoteAddress) {
+      rawIp = req.socket.remoteAddress;
+    } else {
+      const forwarded = req.headers['x-forwarded-for'];
+      if (typeof forwarded === 'string' && forwarded.trim()) {
+        rawIp = forwarded.split(',')[0].trim();
+      } else if (Array.isArray(forwarded) && forwarded.length > 0) {
+        rawIp = forwarded[0].trim();
+      } else if (req.headers['x-real-ip']) {
+        rawIp = String(req.headers['x-real-ip']).trim();
+      }
+    }
+
+    const cleanIp = rawIp.replace(/^::ffff:/, '').trim();
+    const isIpv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(cleanIp);
+    const isIpv6 = cleanIp.includes(':');
+
+    if (isIpv4 || isIpv6) {
+      return cleanIp;
+    }
+    return 'unknown';
+  }
+
+  function hashIp(ip: string): string {
+    if (!ip || ip === 'unknown') return 'unknown_hash';
+    return crypto.createHmac('sha256', IP_HASH_SALT).update(ip).digest('hex').substring(0, 16);
+  }
+
+  function maskIp(ip: string): string {
+    if (!ip || ip === 'unknown') return 'unknown';
+    if (ip === '127.0.0.1' || ip === '::1') return '127.***.***.1';
+    const parts = ip.split('.');
+    if (parts.length === 4) {
+      return `${parts[0]}.***.***.${parts[3]}`;
+    }
+    const v6Parts = ip.split(':');
+    if (v6Parts.length >= 2) {
+      return `${v6Parts[0]}:${v6Parts[1]}:****:****`;
+    }
+    return '***.***.***.***';
+  }
+
+  const geoCache = new Map<string, { country: string; countryCode: string; region: string; city: string }>();
+
+  async function resolveGeo(ip: string): Promise<{ country: string; countryCode: string; region: string; city: string }> {
+    if (!ip || ip === 'unknown') {
+      return { country: 'Unknown', countryCode: 'XX', region: 'Unknown', city: 'Unknown' };
+    }
+    if (ip === '127.0.0.1' || ip === '::1' || ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('172.16.')) {
+      return { country: 'Local Network', countryCode: 'LO', region: 'Localhost', city: 'Localhost' };
+    }
+
+    if (geoCache.has(ip)) {
+      return geoCache.get(ip)!;
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
+      const res = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'COMMANDEV-Analytics/2.5' }
+      }).catch(() => null);
+      clearTimeout(timeoutId);
+
+      if (res && res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && (data.country_name || data.country)) {
+          const result = {
+            country: String(data.country_name || data.country || 'Unknown'),
+            countryCode: String(data.country_code || data.country || 'XX').toUpperCase(),
+            region: String(data.region || 'Unknown'),
+            city: String(data.city || 'Unknown')
+          };
+          geoCache.set(ip, result);
+          return result;
+        }
+      }
+    } catch {}
+
+    const fallback = { country: 'Unknown', countryCode: 'XX', region: 'Unknown', city: 'Unknown' };
+    geoCache.set(ip, fallback);
+    return fallback;
+  }
+
+  // Public API: Record Visitor Traffic with Server-Authoritative IP & Privacy Masking
   app.post('/api/track/visit', async (req, res) => {
     try {
-      const forwarded = req.headers['x-forwarded-for'];
-      const rawIp = typeof forwarded === 'string' 
-        ? forwarded.split(',')[0].trim() 
-        : (req.socket?.remoteAddress || req.ip || '127.0.0.1');
-      
-      const cleanIp = rawIp.replace(/^::ffff:/, '');
+      const cleanIp = extractClientIp(req);
+      const now = Date.now();
+
+      // In-memory rate limiting check per client IP
+      const rateData = visitorRateLimitMap.get(cleanIp) || { count: 0, windowStart: now };
+      if (now - rateData.windowStart > RATE_LIMIT_WINDOW_MS) {
+        rateData.count = 1;
+        rateData.windowStart = now;
+      } else {
+        rateData.count += 1;
+      }
+      visitorRateLimitMap.set(cleanIp, rateData);
+
+      if (rateData.count > MAX_VISITS_PER_WINDOW) {
+        return res.status(200).json({ success: false, message: 'Rate limit applied' });
+      }
+
       const body = req.body || {};
-      const visitId = body.id || `vis_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+      // In-memory session + path deduplication to avoid repetitive database writes
+      const rawSessionId = String(body.sessionId || '').substring(0, 64);
+      const rawPath = String(body.path || '/').substring(0, 200);
+      const dedupKey = `${cleanIp}_${rawSessionId}_${rawPath}`;
+      const lastSeenTime = visitorPathDedupMap.get(dedupKey) || 0;
+      if (now - lastSeenTime < PATH_DEDUP_WINDOW_MS) {
+        return res.status(200).json({ success: true, deduped: true });
+      }
+      visitorPathDedupMap.set(dedupKey, now);
+
+      // Periodic garbage collection for memory bounded operation
+      if (visitorPathDedupMap.size > 2000) {
+        visitorPathDedupMap.clear();
+      }
+
+      const visitId = `vis_${now}_${Math.random().toString(36).substring(2, 8)}`;
+
+      // Authoritative verification of authenticated caller (never trust client claimed userId/userEmail)
+      let verifiedUid: string | undefined = undefined;
+      let visitorType: 'authenticated' | 'anonymous' = 'anonymous';
+
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.split('Bearer ')[1];
+        try {
+          const decoded = await adminAuth.verifyIdToken(token);
+          if (decoded && decoded.uid) {
+            verifiedUid = decoded.uid;
+            visitorType = 'authenticated';
+          }
+        } catch {}
+      }
+
+      const maskedIp = maskIp(cleanIp);
+      const ipHash = hashIp(cleanIp);
+      const geo = await resolveGeo(cleanIp);
 
       const visitDoc = {
         id: visitId,
-        ip: cleanIp && cleanIp !== '::1' && cleanIp !== '127.0.0.1' ? cleanIp : (body.ip || cleanIp),
-        city: body.city || undefined,
-        country: body.country || undefined,
-        countryCode: body.countryCode || undefined,
-        region: body.region || undefined,
-        userAgent: body.userAgent || req.headers['user-agent'] || '',
-        browser: body.browser || 'Browser',
-        os: body.os || 'OS',
-        device: body.device || 'Desktop',
-        path: body.path || '/',
-        pageTitle: body.pageTitle || 'COMMANDEV Platform',
-        referrer: body.referrer || req.headers['referer'] || 'Langsung (Direct)',
-        timestamp: body.timestamp || new Date().toISOString(),
-        userId: body.userId || undefined,
-        userEmail: body.userEmail || undefined,
-        userRole: body.userRole || 'guest',
-        sessionId: body.sessionId || `ses_${Date.now()}`,
-        screenResolution: body.screenResolution || undefined,
-        language: body.language || req.headers['accept-language'] || 'id-ID'
+        maskedIp,
+        ipHash,
+        city: geo.city,
+        country: geo.country,
+        countryCode: geo.countryCode,
+        region: geo.region,
+        userAgent: String(req.headers['user-agent'] || '').substring(0, 250),
+        browser: String(body.browser || 'Browser').substring(0, 50),
+        os: String(body.os || 'OS').substring(0, 50),
+        device: ['Desktop', 'Mobile', 'Tablet'].includes(body.device) ? body.device : 'Desktop',
+        path: String(body.path || '/').substring(0, 200),
+        pageTitle: String(body.pageTitle || 'COMMANDEV Platform').substring(0, 100),
+        referrer: String(body.referrer || req.headers['referer'] || 'Langsung (Direct)').substring(0, 200),
+        timestamp: new Date().toISOString(),
+        visitorType,
+        userId: verifiedUid, // Firebase UID only (no email or PII)
+        sessionId: String(body.sessionId || `ses_${now}`).substring(0, 64)
       };
 
       await adminDb.collection('visitor_traffic').doc(visitId).set(visitDoc, { merge: true });
-      return res.status(200).json({ success: true, id: visitId, ip: visitDoc.ip });
+      return res.status(200).json({ success: true, id: visitId });
     } catch (err: any) {
       console.warn('Error recording visitor traffic on server:', err);
       return res.status(200).json({ success: false, message: 'Logged' });
     }
   });
 
-  // Admin API: Query Visitor Traffic & IP Summary
+  // Admin API: Query Visitor Traffic & IP Summary (Protected by Firebase Auth + requireAdmin)
   app.get('/api/admin/analytics/traffic', authenticateFirebaseUser, requireAdmin, async (req, res) => {
     try {
       const limitCount = Math.min(Math.max(parseInt(String(req.query.limit || '100'), 10) || 100, 10), 300);
@@ -3150,7 +3297,7 @@ async function startServer() {
         .get();
 
       const entries: any[] = [];
-      const ipMap = new Map<string, { count: number; country?: string; lastSeen: string }>();
+      const ipMap = new Map<string, { maskedIp: string; ipHash: string; count: number; country?: string; lastSeen: string }>();
       const sessionSet = new Set<string>();
       const pageMap = new Map<string, { count: number; title?: string }>();
       const browserMap = new Map<string, number>();
@@ -3163,12 +3310,37 @@ async function startServer() {
 
       snap.forEach((doc) => {
         const d = doc.data();
-        entries.push(d);
-        const ip = d.ip || 'Unknown';
-        const cur = ipMap.get(ip) || { count: 0, country: d.country, lastSeen: d.timestamp };
+        const masked = d.maskedIp || maskIp(d.ip || 'unknown');
+        const hash = d.ipHash || hashIp(d.ip || 'unknown');
+        
+        // Sanitize entry: ensure raw IP and email never leave server
+        const sanitizedEntry = {
+          id: d.id || doc.id,
+          maskedIp: masked,
+          ipHash: hash,
+          ip: masked, // Alias for UI display
+          city: d.city,
+          country: d.country,
+          countryCode: d.countryCode,
+          region: d.region,
+          browser: d.browser || 'Browser',
+          os: d.os || 'OS',
+          device: d.device || 'Desktop',
+          path: d.path || '/',
+          pageTitle: d.pageTitle || 'COMMANDEV',
+          referrer: d.referrer || 'Direct',
+          timestamp: d.timestamp,
+          visitorType: d.visitorType || (d.userId ? 'authenticated' : 'anonymous'),
+          userId: d.userId,
+          sessionId: d.sessionId || 'ses_unknown'
+        };
+        entries.push(sanitizedEntry);
+
+        // Aggregate by IP hash
+        const cur = ipMap.get(hash) || { maskedIp: masked, ipHash: hash, count: 0, country: d.country, lastSeen: d.timestamp };
         cur.count += 1;
         if (!cur.country && d.country) cur.country = d.country;
-        ipMap.set(ip, cur);
+        ipMap.set(hash, cur);
 
         if (d.sessionId) sessionSet.add(d.sessionId);
         if (d.timestamp && d.timestamp.startsWith(todayStr)) visitsToday += 1;
@@ -3195,7 +3367,7 @@ async function startServer() {
         activeSessions: sessionSet.size,
         visitsToday,
         deviceBreakdown: { desktop: desktopCount, mobile: mobileCount, tablet: tabletCount },
-        topIps: Array.from(ipMap.entries()).map(([ip, v]) => ({ ip, ...v })).sort((a, b) => b.count - a.count).slice(0, 10),
+        topIps: Array.from(ipMap.values()).map(v => ({ ip: v.maskedIp, ...v })).sort((a, b) => b.count - a.count).slice(0, 10),
         topPages: Array.from(pageMap.entries()).map(([path, v]) => ({ path, ...v })).sort((a, b) => b.count - a.count).slice(0, 10),
         topBrowsers: Array.from(browserMap.entries()).map(([browser, count]) => ({ browser, count })).sort((a, b) => b.count - a.count),
         topReferrers: Array.from(referrerMap.entries()).map(([referrer, count]) => ({ referrer, count })).sort((a, b) => b.count - a.count).slice(0, 5),

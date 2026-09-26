@@ -296,7 +296,7 @@ export function AdminAnalyticsView() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-300">
-                  Total <strong className="text-white font-mono">{fmt(summary?.visitorSummary?.totalVisits || trafficData?.totalVisits)}</strong> kunjungan terdeteksi dari <strong className="text-amber-400 font-mono">{fmt(summary?.visitorSummary?.uniqueIps || trafficData?.uniqueIps)}</strong> IP unik. Kunjungan hari ini: <strong className="text-emerald-400 font-mono">{fmt(summary?.visitorSummary?.visitsToday || trafficData?.visitsToday)}</strong>.
+                  Total <strong className="text-white font-mono">{fmt(summary?.visitorSummary?.totalVisits || trafficData?.totalVisits)}</strong> kunjungan terdeteksi dari <strong className="text-amber-400 font-mono">{fmt(summary?.visitorSummary?.uniqueIps || trafficData?.uniqueIps)}</strong> alamat IP unik. Kunjungan hari ini: <strong className="text-emerald-400 font-mono">{fmt(summary?.visitorSummary?.visitsToday || trafficData?.visitsToday)}</strong>.
                 </p>
               </div>
             </div>
@@ -569,7 +569,7 @@ export function AdminAnalyticsView() {
                 {trafficLoading ? <span className="text-slate-600 animate-pulse">...</span> : fmt(trafficData?.uniqueIps || summary?.visitorSummary?.uniqueIps)}
               </div>
               <div className="text-[11px] text-slate-500">
-                Pengunjung unik teridentifikasi
+                Alamat IP unik terobservasi
               </div>
             </div>
 
@@ -607,7 +607,7 @@ export function AdminAnalyticsView() {
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Top Alamat IP</span>
+                  <span>Top Alamat IP (Masked)</span>
                 </span>
                 <span className="text-[10px] text-slate-500 font-mono">Frekuensi</span>
               </div>
@@ -616,13 +616,13 @@ export function AdminAnalyticsView() {
                   (trafficData?.topIps || summary?.visitorSummary?.topIps || []).slice(0, 5).map((item, idx) => (
                     <div key={idx} className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-950 border border-slate-800/80">
                       <div className="flex items-center gap-1.5 truncate">
-                        <span className="font-mono text-amber-300 font-bold text-[11px] truncate">{item.ip}</span>
+                        <span className="font-mono text-amber-300 font-bold text-[11px] truncate">{item.maskedIp || item.ip}</span>
                         <button
-                          onClick={() => handleCopyIp(item.ip)}
-                          title="Salin Alamat IP"
+                          onClick={() => handleCopyIp(item.maskedIp || item.ip)}
+                          title="Salin Masked IP"
                           className="text-slate-400 hover:text-white p-0.5 cursor-pointer"
                         >
-                          {copiedIp === item.ip ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          {copiedIp === (item.maskedIp || item.ip) ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                         </button>
                       </div>
                       <span className="text-[11px] font-bold text-white px-2 py-0.5 rounded-full bg-slate-800 shrink-0 font-mono">
@@ -795,13 +795,13 @@ export function AdminAnalyticsView() {
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-950 text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-800">
                   <tr>
-                    <th className="py-3 px-4">Waktu</th>
-                    <th className="py-3 px-4">Alamat IP</th>
+                    <th className="py-3 px-4">Waktu Kunjungan</th>
+                    <th className="py-3 px-4">Alamat IP (Masked) & Lokasi Perkiraan (GeoIP)</th>
                     <th className="py-3 px-4">Halaman yang Dikunjungi</th>
                     <th className="py-3 px-4">Perangkat & OS</th>
                     <th className="py-3 px-4">Browser</th>
                     <th className="py-3 px-4">Sumber (Referrer)</th>
-                    <th className="py-3 px-4">Pengguna</th>
+                    <th className="py-3 px-4">Status Pengguna</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 bg-slate-900/50">
@@ -811,13 +811,16 @@ export function AdminAnalyticsView() {
                       if (trafficDeviceFilter !== 'all' && v.device !== trafficDeviceFilter) return false;
                       if (!trafficSearch) return true;
                       const q = trafficSearch.toLowerCase();
+                      const ipStr = (v.maskedIp || v.ip || '').toLowerCase();
                       return (
-                        (v.ip && v.ip.toLowerCase().includes(q)) ||
+                        ipStr.includes(q) ||
                         (v.path && v.path.toLowerCase().includes(q)) ||
                         (v.browser && v.browser.toLowerCase().includes(q)) ||
                         (v.os && v.os.toLowerCase().includes(q)) ||
                         (v.country && v.country.toLowerCase().includes(q)) ||
-                        (v.userEmail && v.userEmail.toLowerCase().includes(q))
+                        (v.city && v.city.toLowerCase().includes(q)) ||
+                        (v.userId && v.userId.toLowerCase().includes(q)) ||
+                        (v.visitorType && v.visitorType.toLowerCase().includes(q))
                       );
                     });
 
@@ -826,7 +829,7 @@ export function AdminAnalyticsView() {
                         <tr>
                           <td colSpan={7} className="py-12 text-center text-slate-500">
                             <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-400 mb-2" />
-                            <span>Memuat data trafik pengunjung...</span>
+                            <span>Memuat data log trafik pengunjung...</span>
                           </td>
                         </tr>
                       );
@@ -847,6 +850,7 @@ export function AdminAnalyticsView() {
                       const dateObj = new Date(v.timestamp);
                       const timeStr = isNaN(dateObj.getTime()) ? v.timestamp : dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                       const dateStr = isNaN(dateObj.getTime()) ? '' : dateObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+                      const displayIp = v.maskedIp || v.ip || '***.***.***.***';
 
                       return (
                         <tr key={v.id} className="hover:bg-slate-800/40 transition-colors">
@@ -856,18 +860,18 @@ export function AdminAnalyticsView() {
                             <div className="text-[10px] text-slate-500">{dateStr}</div>
                           </td>
 
-                          {/* IP Address */}
+                          {/* IP Address (Masked) & Approximate GeoIP */}
                           <td className="py-3 px-4 whitespace-nowrap">
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-amber-300 font-bold bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
-                                {v.ip || '127.0.0.1'}
+                                {displayIp}
                               </span>
                               <button
-                                onClick={() => handleCopyIp(v.ip)}
-                                title="Salin IP"
+                                onClick={() => handleCopyIp(displayIp)}
+                                title="Salin Masked IP"
                                 className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800 transition-colors cursor-pointer"
                               >
-                                {copiedIp === v.ip ? (
+                                {copiedIp === displayIp ? (
                                   <Check className="w-3.5 h-3.5 text-emerald-400" />
                                 ) : (
                                   <Copy className="w-3.5 h-3.5" />
@@ -878,6 +882,7 @@ export function AdminAnalyticsView() {
                               <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
                                 <MapPin className="w-3 h-3 text-slate-500" />
                                 <span>{v.city ? `${v.city}, ` : ''}{v.country}</span>
+                                <span className="text-[9px] text-slate-600 font-mono">(GeoIP)</span>
                               </div>
                             )}
                           </td>
@@ -911,16 +916,23 @@ export function AdminAnalyticsView() {
                             <span className="text-slate-400 text-[11px] truncate block max-w-[140px]">{v.referrer || 'Langsung (Direct)'}</span>
                           </td>
 
-                          {/* Pengguna */}
+                          {/* Status Pengguna (Privacy-Preserving, No Email) */}
                           <td className="py-3 px-4 whitespace-nowrap">
-                            {v.userEmail ? (
+                            {v.visitorType === 'authenticated' || v.userId ? (
                               <div>
-                                <span className="text-emerald-300 font-medium">{v.userEmail}</span>
-                                <div className="text-[9px] text-emerald-500 uppercase font-mono">{v.userRole || 'Siswa'}</div>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                                  <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                                  <span>Terotentikasi</span>
+                                </span>
+                                {v.userId && (
+                                  <div className="text-[9px] text-slate-500 font-mono mt-0.5">
+                                    UID: {v.userId.substring(0, 10)}...
+                                  </div>
+                                )}
                               </div>
                             ) : (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
-                                Pengunjung Tamu
+                                Pengunjung Tamu (Anonim)
                               </span>
                             )}
                           </td>

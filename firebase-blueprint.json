@@ -325,13 +325,15 @@
     },
     "VisitorTraffic": {
       "title": "VisitorTraffic",
-      "description": "Visitor traffic log containing IP address, device, location, referrer, and page visited",
+      "description": "Privacy-preserving visitor traffic log containing masked IP, IP hash, device, approximate location, referrer, and page visited",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "ip": { "type": "string" },
+        "maskedIp": { "type": "string" },
+        "ipHash": { "type": "string" },
         "city": { "type": "string" },
         "country": { "type": "string" },
+        "countryCode": { "type": "string" },
         "region": { "type": "string" },
         "userAgent": { "type": "string" },
         "browser": { "type": "string" },
@@ -341,11 +343,11 @@
         "pageTitle": { "type": "string" },
         "referrer": { "type": "string" },
         "timestamp": { "type": "string" },
+        "visitorType": { "type": "string" },
         "userId": { "type": "string" },
-        "userEmail": { "type": "string" },
         "sessionId": { "type": "string" }
       },
-      "required": ["id", "ip", "timestamp", "path"]
+      "required": ["id", "maskedIp", "ipHash", "timestamp", "path", "visitorType"]
     }
   },
   "firestore": {

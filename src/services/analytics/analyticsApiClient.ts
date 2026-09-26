@@ -135,9 +135,9 @@ export async function fetchAnalyticsSummary(
     // If server responded with genuine JSON
     if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
-      // Attach live visitor traffic from Firestore
+      // Attach live visitor traffic from authoritative source
       try {
-        const visitorSummary = await visitorTracker.getVisitorTrafficFromFirestore(100);
+        const visitorSummary = await fetchVisitorTraffic(100);
         data.visitorSummary = visitorSummary;
       } catch {}
       return data;
@@ -151,7 +151,18 @@ export async function fetchAnalyticsSummary(
 }
 
 export async function fetchVisitorTraffic(limitCount: number = 100): Promise<VisitorTrafficSummary> {
-  // Always query authoritative real visitor traffic directly from Firestore
+  const headers = await getAdminAuthHeaders();
+  try {
+    const res = await fetch(`/api/admin/analytics/traffic?limit=${limitCount}`, { headers });
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && contentType.includes('application/json')) {
+      return await res.json();
+    }
+  } catch (netErr) {
+    console.warn('[AnalyticsClient] Backend traffic API unreachable, checking authorized Firestore fallback:', netErr);
+  }
+
+  // Direct Firestore fallback (Guarded by admin authorization check)
   return await visitorTracker.getVisitorTrafficFromFirestore(limitCount);
 }
 

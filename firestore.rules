@@ -165,10 +165,10 @@ service cloud.firestore {
       allow read, write: if isAdmin() && isValidId(date);
     }
 
-    // Visitor Traffic & IP Logging (Public write for real visit telemetry, Admin read/list/manage)
+    // Visitor Traffic & IP Logging (Server Ingestion Only via Admin SDK, Admin-Only Read)
     match /visitor_traffic/{visitId} {
-      allow create: if isValidId(visitId);
-      allow read, list, update, delete: if isAdmin();
+      allow read, list: if isAdmin();
+      allow create, update, delete: if false; // All writes must pass through secure server ingestion boundary
     }
   }
 }
