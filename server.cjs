@@ -35,7 +35,6 @@ module.exports = __toCommonJS(server_exports);
 var import_express = __toESM(require("express"), 1);
 var import_path = __toESM(require("path"), 1);
 var import_crypto = __toESM(require("crypto"), 1);
-var import_vite = require("vite");
 var import_genai = require("@google/genai");
 var import_firebase_admin = __toESM(require("firebase-admin"), 1);
 var import_firestore = require("firebase-admin/firestore");
@@ -28099,13 +28098,51 @@ try {
 } catch (err) {
   console.error("Error loading firebase-applet-config.json for Admin Firestore:", err);
 }
-if (projectId) {
-  import_firebase_admin.default.initializeApp({ projectId });
-} else {
-  import_firebase_admin.default.initializeApp();
+function ensureFirebaseInitialized() {
+  if (import_firebase_admin.default.getApps().length === 0) {
+    try {
+      if (projectId) {
+        import_firebase_admin.default.initializeApp({ projectId });
+      } else {
+        import_firebase_admin.default.initializeApp();
+      }
+    } catch (err) {
+      console.error("[Firebase Admin] Lazy initialization failed during request:", err);
+    }
+  }
 }
-var adminDb = databaseId ? (0, import_firestore.getFirestore)(databaseId) : (0, import_firestore.getFirestore)();
-var adminAuth = (0, import_auth.getAuth)();
+var _adminDb = null;
+var adminDb = new Proxy({}, {
+  get(target, prop) {
+    ensureFirebaseInitialized();
+    if (!_adminDb) {
+      try {
+        _adminDb = databaseId ? (0, import_firestore.getFirestore)(databaseId) : (0, import_firestore.getFirestore)();
+      } catch (err) {
+        console.error("Failed to initialize Firestore adminDb lazily:", err);
+        throw new Error("Database initialization failed. Please check Firebase credentials.");
+      }
+    }
+    const val = Reflect.get(_adminDb, prop);
+    return typeof val === "function" ? val.bind(_adminDb) : val;
+  }
+});
+var _adminAuth = null;
+var adminAuth = new Proxy({}, {
+  get(target, prop) {
+    ensureFirebaseInitialized();
+    if (!_adminAuth) {
+      try {
+        _adminAuth = (0, import_auth.getAuth)();
+      } catch (err) {
+        console.error("Failed to initialize Firebase Auth adminAuth lazily:", err);
+        throw new Error("Firebase Auth initialization failed. Please check Firebase credentials.");
+      }
+    }
+    const val = Reflect.get(_adminAuth, prop);
+    return typeof val === "function" ? val.bind(_adminAuth) : val;
+  }
+});
 var authenticateFirebaseUser = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
@@ -31949,8 +31986,9 @@ Berikan output JSON yang valid murni (tanpa pembungkus markdown apapun, langsung
   app.all(/^\/api\/.*/, (req, res) => {
     res.status(404).json({ error: `API endpoint ${req.method} ${req.path} not found` });
   });
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await (0, import_vite.createServer)({
+  if (process.env.NODE_ENV !== "production" && process.env.VERCEL !== "1") {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa"
     });
